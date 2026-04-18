@@ -17,6 +17,7 @@
         "dashboard:compaction": "pnpm exec ts-node scripts/compaction-dashboard.ts",
         "typecheck": "pnpm exec tsc -p tsconfig.json --noEmit",
         "test:compaction": "pnpm exec ts-node tests/compaction.integration.ts",
+        "test:cli-routing": "pnpm exec ts-node tests/apps-cli-routing.integration.ts",
         "test:daemons": "pnpm exec ts-node tests/daemon.integration.ts",
         "cortexa": "ts-node cli/index.ts",
         "cortexa:daemon": "ts-node daemon/server.ts"
