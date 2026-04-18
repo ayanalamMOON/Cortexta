@@ -1,0 +1,7 @@
+# Training requirements (extends runtime requirements)
+-r requirements.txt
+
+# NOTE: PyTorch/Transformers wheel availability depends on Python version.
+# If installation fails on very new interpreters, use Python 3.11/3.12 for training.
+torch>=2.4
+transformers>=4.44

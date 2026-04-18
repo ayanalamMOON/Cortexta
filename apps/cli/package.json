@@ -1,0 +1,16 @@
+{
+    "name": "@cortexa/cli",
+    "version": "0.1.0",
+    "bin": {
+        "cortexa": "bin/cortexa.js"
+    },
+    "scripts": {
+        "build": "tsc -p ../../tsconfig.json",
+        "start": "node ../../dist/apps/cli/src/index.js",
+        "dev": "ts-node src/index.ts"
+    },
+    "dependencies": {
+        "@cortexa/core": "workspace:*",
+        "commander": "^12.1.0"
+    }
+}

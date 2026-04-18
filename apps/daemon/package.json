@@ -1,0 +1,14 @@
+{
+    "name": "@cortexa/daemon",
+    "version": "0.1.0",
+    "scripts": {
+        "build": "tsc -p ../../tsconfig.json",
+        "start": "node dist/apps/daemon/src/server.js",
+        "dev": "ts-node src/server.ts"
+    },
+    "dependencies": {
+        "@cortexa/core": "workspace:*",
+        "express": "^4.21.2",
+        "ws": "^8.18.3"
+    }
+}

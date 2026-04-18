@@ -1,0 +1,35 @@
+{
+    "name": "cortexa",
+    "private": true,
+    "version": "0.1.0",
+    "description": "CORTEXA developer cognition system scaffold",
+    "packageManager": "pnpm@9.15.0",
+    "engines": {
+        "node": ">=22.16.0 <23"
+    },
+    "scripts": {
+        "build": "pnpm run doctor && pnpm -r build",
+        "dev": "pnpm run doctor && pnpm -r dev",
+        "start": "pnpm --filter @cortexa/cli start",
+        "daemon": "pnpm --filter @cortexa/daemon start",
+        "doctor": "ts-node scripts/doctor.ts",
+        "compact:memory": "pnpm exec ts-node scripts/compact-memory.ts",
+        "dashboard:compaction": "pnpm exec ts-node scripts/compaction-dashboard.ts",
+        "typecheck": "pnpm exec tsc -p tsconfig.json --noEmit",
+        "test:compaction": "pnpm exec ts-node tests/compaction.integration.ts",
+        "test:daemons": "pnpm exec ts-node tests/daemon.integration.ts",
+        "cortexa": "ts-node cli/index.ts",
+        "cortexa:daemon": "ts-node daemon/server.ts"
+    },
+    "dependencies": {
+        "better-sqlite3": "^11.10.0",
+        "express": "^4.21.2"
+    },
+    "devDependencies": {
+        "@types/express": "^5.0.6",
+        "@types/ws": "^8.18.1",
+        "eslint": "^9.24.0",
+        "ts-node": "^10.9.2",
+        "typescript": "^5.8.0"
+    }
+}
