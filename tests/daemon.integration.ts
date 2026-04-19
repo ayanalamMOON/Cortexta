@@ -87,6 +87,23 @@ async function runContract(name: string, factory: DaemonFactory): Promise<void> 
         const healthBody = (await health.json()) as {
             ok?: boolean;
             service?: string;
+            observability?: {
+                logging?: {
+                    enabled?: boolean;
+                    level?: string;
+                    format?: string;
+                };
+                metrics?: {
+                    enabled?: boolean;
+                    path?: string;
+                    requireAuth?: boolean;
+                };
+                rateLimit?: {
+                    enabled?: boolean;
+                    windowMs?: number;
+                    maxRequests?: number;
+                };
+            };
             selfHealing?: {
                 enabled?: boolean;
                 started?: boolean;
@@ -104,6 +121,13 @@ async function runContract(name: string, factory: DaemonFactory): Promise<void> 
         };
         assert.equal(healthBody.ok, true, `[${name}] /health ok`);
         assert.equal(healthBody.service, "cortexa-daemon", `[${name}] /health service`);
+        assert.equal(typeof healthBody.observability?.logging?.enabled, "boolean", `[${name}] /health observability.logging.enabled`);
+        assert.equal(typeof healthBody.observability?.metrics?.enabled, "boolean", `[${name}] /health observability.metrics.enabled`);
+        assert.equal(typeof healthBody.observability?.metrics?.path, "string", `[${name}] /health observability.metrics.path`);
+        assert.equal(typeof healthBody.observability?.metrics?.requireAuth, "boolean", `[${name}] /health observability.metrics.requireAuth`);
+        assert.equal(typeof healthBody.observability?.rateLimit?.enabled, "boolean", `[${name}] /health observability.rateLimit.enabled`);
+        assert.equal(typeof healthBody.observability?.rateLimit?.windowMs, "number", `[${name}] /health observability.rateLimit.windowMs`);
+        assert.equal(typeof healthBody.observability?.rateLimit?.maxRequests, "number", `[${name}] /health observability.rateLimit.maxRequests`);
         assert.equal(typeof healthBody.selfHealing?.enabled, "boolean", `[${name}] /health selfHealing.enabled`);
         assert.equal(typeof healthBody.selfHealing?.started, "boolean", `[${name}] /health selfHealing.started`);
         assert.equal(typeof healthBody.selfHealing?.running, "boolean", `[${name}] /health selfHealing.running`);
@@ -122,6 +146,22 @@ async function runContract(name: string, factory: DaemonFactory): Promise<void> 
 
         const unauthorizedQuery = await postJson(baseUrl, "/query", { query: "hello" });
         await expectStatus(unauthorizedQuery, 401, `[${name}] auth gate /query`);
+
+        const metricsPath = healthBody.observability?.metrics?.path ?? "/metrics";
+        const unauthorizedMetrics = await fetch(`${baseUrl}${metricsPath}`);
+        await expectStatus(unauthorizedMetrics, 401, `[${name}] auth gate ${metricsPath}`);
+
+        const authorizedMetrics = await fetch(`${baseUrl}${metricsPath}`, {
+            headers: {
+                "x-cortexa-token": TOKEN
+            }
+        });
+        await expectStatus(authorizedMetrics, 200, `[${name}] metrics endpoint success`);
+        const metricsText = await authorizedMetrics.text();
+        assert.ok(
+            metricsText.includes("cortexa_daemon_http_requests_total"),
+            `[${name}] metrics should include http request counter`
+        );
 
         const missingQuery = await postJson(baseUrl, "/query", {}, TOKEN);
         await expectStatus(missingQuery, 400, `[${name}] /query missing query`);

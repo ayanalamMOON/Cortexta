@@ -36,6 +36,8 @@ Before opening a PR, run:
 ```bash
 pnpm run typecheck
 pnpm run test:unit
+pnpm run test:observability
+pnpm run test:mcp
 pnpm run test:cli-routing
 pnpm run test:evolution
 pnpm run test:ingestion

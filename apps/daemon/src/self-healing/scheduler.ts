@@ -117,6 +117,11 @@ export interface SelfHealingStatus {
     slo: SelfHealingSloSnapshot;
 }
 
+export interface SelfHealingRunLifecycleState {
+    consecutiveFailures: number;
+    runCount: number;
+}
+
 export interface SelfHealingServices {
     audit: (options: { projectId?: string; limit?: number; maxIssues?: number }) => MemoryResurrectionAuditReport;
     backfill: (options: { projectId?: string; limit?: number; dryRun?: boolean }) => BackfillMemoryCompactionResult;
@@ -126,6 +131,7 @@ export interface SelfHealingServices {
     now: () => number;
     random: () => number;
     log: (level: "info" | "warn" | "error", message: string, payload?: Record<string, unknown>) => void;
+    onRunCompleted: (run: SelfHealingRunReport, state: SelfHealingRunLifecycleState) => void;
 }
 
 const DEFAULT_CONFIG: SelfHealingConfig = {
@@ -633,7 +639,8 @@ function defaultServices(): SelfHealingServices {
         countOutcomesSince: countPersistedOutcomesSince,
         now: () => Date.now(),
         random: () => Math.random(),
-        log: defaultLog
+        log: defaultLog,
+        onRunCompleted: () => undefined
     };
 }
 
@@ -1003,6 +1010,18 @@ export class SelfHealingScheduler {
         }
 
         this.persistRun(run);
+
+        try {
+            this.services.onRunCompleted(run, {
+                consecutiveFailures: this.consecutiveFailures,
+                runCount: this.runCount
+            });
+        } catch (error) {
+            this.services.log("warn", "self-healing lifecycle callback failed", {
+                runId: run.runId,
+                error: error instanceof Error ? error.message : String(error)
+            });
+        }
     }
 
     private async execute(trigger: SelfHealingTrigger, options: ExecuteOptions): Promise<SelfHealingRunReport> {

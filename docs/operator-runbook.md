@@ -79,6 +79,17 @@ pnpm run cortexa -- memory list --limit=5
 ```bash
 pnpm run cortexa:daemon
 ```
+To run MCP stdio transport for MCP-compatible clients:
+
+```bash
+pnpm run cortexa:mcp
+```
+
+To verify Prometheus metrics endpoint:
+
+```bash
+curl -s http://localhost:4312/metrics -H "x-cortexa-token: <token>" | head -n 20
+```
 
 Health check from another terminal:
 

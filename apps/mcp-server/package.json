@@ -1,0 +1,12 @@
+{
+    "name": "@cortexa/mcp-server",
+    "version": "0.1.0",
+    "scripts": {
+        "build": "tsc -p ../../tsconfig.json",
+        "start": "node ../../dist/apps/mcp-server/src/server.js",
+        "dev": "ts-node src/server.ts"
+    },
+    "dependencies": {
+        "@cortexa/core": "workspace:*"
+    }
+}

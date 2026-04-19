@@ -50,6 +50,8 @@ jobs:
           pnpm run test:unit
           pnpm run test:cli-routing
           pnpm run test:evolution
+          pnpm run test:observability
+          pnpm run test:mcp
 
   integration:
     name: Integration (Node 22)

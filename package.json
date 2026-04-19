@@ -13,11 +13,13 @@
         "url": "https://github.com/ayanalamMOON/Cortexta/issues"
     },
     "bin": {
-        "cortexa": "apps/cli/bin/cortexa.js"
+        "cortexa": "apps/cli/bin/cortexa.js",
+        "cortexa-mcp": "apps/mcp-server/bin/cortexa-mcp.js"
     },
     "files": [
         "dist/**/*",
         "apps/cli/bin/**/*",
+        "apps/mcp-server/bin/**/*",
         "storage/sqlite/schema.sql",
         "README.md",
         "LICENSE",
@@ -46,17 +48,23 @@
         "test:self-healing": "pnpm exec ts-node tests/self-healing.scheduler.integration.ts",
         "test:ingestion": "pnpm exec ts-node tests/ingestion.incremental.integration.ts",
         "test:compaction": "pnpm exec ts-node tests/compaction.integration.ts",
+        "test:observability": "pnpm exec ts-node tests/observability.metrics.unit.ts",
         "test:cli-routing": "pnpm exec ts-node tests/apps-cli-routing.integration.ts",
+        "test:mcp": "pnpm exec ts-node tests/mcp-server.integration.ts",
         "test:daemons": "pnpm exec ts-node tests/daemon.integration.ts",
         "cortexa": "ts-node cli/index.ts",
-        "cortexa:daemon": "ts-node daemon/server.ts"
+        "cortexa:daemon": "ts-node daemon/server.ts",
+        "cortexa:mcp": "ts-node apps/mcp-server/src/server.ts"
     },
     "dependencies": {
         "better-sqlite3": "^11.10.0",
         "chokidar": "^4.0.3",
         "commander": "^12.1.0",
+        "express-rate-limit": "^7.5.0",
         "express": "^4.21.2",
         "node-fetch": "^3.3.2",
+        "pino": "^9.6.0",
+        "prom-client": "^15.1.3",
         "tiktoken": "^1.0.22",
         "tree-sitter": "^0.22.4",
         "tree-sitter-cpp": "^0.23.4",

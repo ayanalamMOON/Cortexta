@@ -44,9 +44,17 @@ This README is fully updated for:
   - persisted scheduler run history (`self_healing_run_history`) across restarts
   - exponential backoff on repeated run failures
   - rolling-window SLO counters for `applied` / `dry-run-only` / `skipped` / `error`
+- **Observability + hardening**
+  - structured JSON logging for daemon HTTP and scheduler lifecycle
+  - Prometheus metrics export (`/metrics`) with HTTP + self-healing dimensions
+  - built-in rate limiting controls for daemon APIs
 - **Context compiler**
   - token-bounded packing
   - copilot-friendly content summaries (`copilotContent`) for lower token cost
+- **MCP stdio transport**
+  - full JSON-RPC framing over stdio for MCP-compatible clients
+  - modular tool catalog bridging daemon + CX-LINK APIs
+  - MCP context codec tools (`cortexa_encode_mcp_ctx` / `cortexa_decode_mcp_ctx`)
 - **Daemon APIs + WS stream**
   - query/context/evolve/cxlink + compaction endpoints
 
@@ -102,8 +110,12 @@ pnpm run typecheck
 - [`docs/api-examples.md`](docs/api-examples.md) — Copy/paste JSON request and response examples for all daemon endpoints.
 - [`docs/operator-runbook.md`](docs/operator-runbook.md) — Day-1 and Day-2 operational workflows (setup, maintenance, compaction, troubleshooting).
 - [`docs/cxlink-spec.md`](docs/cxlink-spec.md) — CX-LINK protocol spec (concepts, contract, versioning, route semantics).
+- [`docs/mcp-server.md`](docs/mcp-server.md) — MCP stdio transport setup, tool surface, and client wiring.
+- [`docs/observability.md`](docs/observability.md) — Structured logs + Prometheus metrics + scrape guidance.
+- [`docs/security.md`](docs/security.md) — Security hardening controls for auth, rate limiting, inputs, and container sandboxing.
 - [`docs/containerization.md`](docs/containerization.md) — Docker/Docker Compose setup for daemon + Qdrant.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — Contribution workflow, quality gates, and PR checklist.
+- [`CHANGELOG.md`](CHANGELOG.md) — Release history and notable change tracking.
 
 ---
 
@@ -125,6 +137,9 @@ pnpm run cortexa -- evolve "improve progression selection quality" --project-id=
 
 # 4) run daemon for API clients
 pnpm run cortexa:daemon
+
+# 5) (optional) run MCP stdio transport for external MCP clients
+pnpm run cortexa:mcp
 ```
 
 In another terminal (optional API smoke check):
@@ -325,6 +340,7 @@ Base default:
 ### Routes
 
 - `GET /health`
+- `GET /metrics`
 - `POST /ingest`
 - `POST /query`
 - `POST /context`
@@ -416,6 +432,29 @@ The daemon health payload now includes summarized self-healing scheduler status 
 - `CORTEXA_DAEMON_BODY_LIMIT` (default `6mb`)
 - `CORTEXA_DAEMON_AUTOSTART` (`0` disables module auto-start)
 
+### Observability + rate limiting
+
+- `CORTEXA_LOG_ENABLED` (default `true`)
+- `CORTEXA_LOG_LEVEL` (`trace|debug|info|warn|error|fatal`, default `info`)
+- `CORTEXA_METRICS_ENABLED` (default `true`)
+- `CORTEXA_METRICS_PATH` (default `/metrics`)
+- `CORTEXA_METRICS_REQUIRE_AUTH` (default `true`)
+- `CORTEXA_METRICS_COLLECT_DEFAULTS` (default `true`)
+- `CORTEXA_DAEMON_RATE_LIMIT_ENABLED` (default `true`)
+- `CORTEXA_DAEMON_RATE_LIMIT_WINDOW_MS` (default `60000`)
+- `CORTEXA_DAEMON_RATE_LIMIT_MAX` (default `240`)
+
+### MCP server transport
+
+- `CORTEXA_MCP_SERVER_NAME` (default `cortexa-mcp`)
+- `CORTEXA_MCP_SERVER_VERSION` (default `0.1.0`)
+- `CORTEXA_MCP_PROTOCOL_VERSION` (default `2024-11-05`)
+- `CORTEXA_MCP_DAEMON_URL` (default `http://127.0.0.1:4312`)
+- `CORTEXA_MCP_DAEMON_TOKEN` (optional daemon auth token)
+- `CORTEXA_MCP_TIMEOUT_MS` (default `20000`)
+- `CORTEXA_MCP_ENABLE_MUTATIONS` (default `false`)
+- `CORTEXA_MCP_LOG_LEVEL` (`debug|info|warn|error`, default `info`)
+
 ### Self-healing scheduler
 
 - `CORTEXA_SELF_HEAL_ENABLED` (default `false`)
@@ -448,6 +487,8 @@ The daemon health payload now includes summarized self-healing scheduler status 
 ```bash
 pnpm run typecheck
 pnpm run test:unit
+pnpm run test:observability
+pnpm run test:mcp
 pnpm run test:self-healing
 pnpm run test:compaction
 pnpm run test:daemons
@@ -462,6 +503,7 @@ CI runs on GitHub Actions with a Node matrix (`20`, `22`) and an integration sui
 - License: [MIT](LICENSE)
 - npm package metadata is configured for public distribution (`cortexa`)
 - Runtime support: Node `^20.11.1` and `^22.0.0`
+- release automation is available via tag-driven GitHub workflow (`v*.*.*`)
 
 For containerized deployments, see [`docs/containerization.md`](docs/containerization.md).
 
@@ -493,10 +535,13 @@ pnpm run build
 pnpm run dev
 pnpm run typecheck
 pnpm run test:self-healing
+pnpm run test:observability
+pnpm run test:mcp
 pnpm run test:compaction
 pnpm run test:daemons
 pnpm run cortexa -- <command>
 pnpm run cortexa:daemon
+pnpm run cortexa:mcp
 pnpm run compact:memory -- --limit=1000
 pnpm run dashboard:compaction -- --help
 ```
