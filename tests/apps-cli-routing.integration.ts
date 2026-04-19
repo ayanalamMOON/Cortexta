@@ -22,7 +22,9 @@ function main(): void {
     assertPrimaryRoute(["daemon", "status"], "daemon commands should route to primary CLI");
     assertPrimaryRoute(["ingest", "."], "ingest should route to primary CLI");
     assertPrimaryRoute(["evolve", "upgrade", "progression"], "evolve should route to primary CLI");
+    assertPrimaryRoute(["agent", "list"], "agent alias should route to primary CLI");
     assertPrimaryRoute(["agents", "list"], "agents should route to primary CLI");
+    assertPrimaryRoute(["--daemon", "start"], "--daemon alias should route to primary CLI daemon command");
     assertPrimaryRoute(["--", "memory", "stats"], "single delimiter should still route to primary CLI");
     assertPrimaryRoute(["--", "--", "memory", "stats"], "repeated delimiters should still route to primary CLI");
 
@@ -31,6 +33,13 @@ function main(): void {
 
     const normalized = normalizeArgv(argv("--", "--", "memory", "stats"));
     assert.deepEqual(normalized.slice(2), ["memory", "stats"], "normalizeArgv should drop repeated delimiters");
+
+    const normalizedDashCommand = normalizeArgv(argv("--daemon", "start"));
+    assert.deepEqual(
+        normalizedDashCommand.slice(2),
+        ["daemon", "start"],
+        "normalizeArgv should map --daemon to daemon"
+    );
 
     console.log("✅ apps CLI routing integration test passed");
 }

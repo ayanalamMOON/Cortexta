@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { connectSqlite, initializeSqlite } from "../../storage/sqlite/db";
 import { deleteMemoriesByIds, upsertMemory } from "../mempalace/memory.service";
 import { parseCode } from "./code.parser";
@@ -34,7 +35,26 @@ export interface IngestionResult {
     errors: string[];
 }
 
-const SKIP_DIRS = new Set([".git", "node_modules", "dist", "build", "coverage", ".next", "out"]);
+const SKIP_DIRS = new Set([
+    ".git",
+    "node_modules",
+    "dist",
+    "build",
+    "coverage",
+    ".next",
+    "out",
+    ".venv",
+    "venv",
+    "__pycache__",
+    ".tox",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".cache",
+    ".pnpm-store",
+    ".turbo",
+    ".idea",
+    "target"
+]);
 const CODE_EXTENSIONS = new Set([
     ".ts",
     ".tsx",
@@ -57,6 +77,11 @@ const DEFAULT_MAX_CHAT_FILES = 400;
 const DEFAULT_SKIP_UNCHANGED = true;
 const INGEST_VERSION = "ingest-v2";
 const MAIN_BRANCH = "main";
+const CHAT_TRANSCRIPT_DIRS = [
+    "chatSessions",
+    path.join("GitHub.copilot-chat", "transcripts"),
+    path.join("ms-vscode.copilot-chat", "transcripts")
+];
 
 type IngestionSourceType = "code" | "chat";
 type IngestionMemoryKind = "code_entity" | "chat_turn";
@@ -362,7 +387,152 @@ function collectChatFilesInDirectory(baseDir: string, output: Set<string>, maxFi
     }
 }
 
-function collectFromWorkspaceStorageRoot(storageRoot: string, output: Set<string>, maxFiles: number): void {
+function normalizePathKey(targetPath: string): string {
+    return normalizeSlashes(path.resolve(targetPath)).toLowerCase();
+}
+
+function toAbsoluteWorkspacePath(candidate: string, relativeTo?: string): string | null {
+    const trimmed = candidate.trim();
+    if (!trimmed) {
+        return null;
+    }
+
+    if (trimmed.toLowerCase().startsWith("file://")) {
+        try {
+            return path.resolve(fileURLToPath(trimmed));
+        } catch {
+            return null;
+        }
+    }
+
+    if (path.isAbsolute(trimmed)) {
+        return path.resolve(trimmed);
+    }
+
+    if (relativeTo) {
+        return path.resolve(relativeTo, trimmed);
+    }
+
+    return null;
+}
+
+function parseWorkspaceFoldersFromWorkspaceFile(workspaceFilePath: string): string[] {
+    if (!fs.existsSync(workspaceFilePath)) {
+        return [];
+    }
+
+    try {
+        const raw = fs.readFileSync(workspaceFilePath, "utf8");
+        const parsed = JSON.parse(raw) as { folders?: unknown };
+        const folders = parsed?.folders;
+        if (!Array.isArray(folders)) {
+            return [];
+        }
+
+        const workspaceDir = path.dirname(workspaceFilePath);
+        const resolved = new Set<string>();
+
+        for (const folderEntry of folders) {
+            if (typeof folderEntry === "string") {
+                const direct = toAbsoluteWorkspacePath(folderEntry, workspaceDir);
+                if (direct) {
+                    resolved.add(direct);
+                }
+                continue;
+            }
+
+            if (!folderEntry || typeof folderEntry !== "object") {
+                continue;
+            }
+
+            const candidate = (folderEntry as { path?: unknown }).path;
+            if (typeof candidate !== "string") {
+                continue;
+            }
+
+            const absolute = toAbsoluteWorkspacePath(candidate, workspaceDir);
+            if (absolute) {
+                resolved.add(absolute);
+            }
+        }
+
+        return [...resolved];
+    } catch {
+        return [];
+    }
+}
+
+function readWorkspaceFoldersFromStorageFolder(workspaceDir: string): string[] {
+    const workspaceJsonPath = path.join(workspaceDir, "workspace.json");
+    if (!fs.existsSync(workspaceJsonPath)) {
+        return [];
+    }
+
+    try {
+        const raw = fs.readFileSync(workspaceJsonPath, "utf8");
+        const parsed = JSON.parse(raw) as {
+            folder?: unknown;
+            workspace?: unknown;
+        };
+
+        const folders = new Set<string>();
+
+        if (typeof parsed.folder === "string") {
+            const folderPath = toAbsoluteWorkspacePath(parsed.folder);
+            if (folderPath) {
+                folders.add(folderPath);
+            }
+        }
+
+        if (typeof parsed.workspace === "string") {
+            const workspaceFilePath = toAbsoluteWorkspacePath(parsed.workspace);
+            if (workspaceFilePath) {
+                for (const folderPath of parseWorkspaceFoldersFromWorkspaceFile(workspaceFilePath)) {
+                    folders.add(folderPath);
+                }
+            }
+        }
+
+        return [...folders];
+    } catch {
+        return [];
+    }
+}
+
+function workspaceFolderMatchesProject(workspaceDir: string, projectPath: string): boolean {
+    const projectKey = normalizePathKey(projectPath);
+    const folders = readWorkspaceFoldersFromStorageFolder(workspaceDir);
+
+    for (const folderPath of folders) {
+        const folderKey = normalizePathKey(folderPath);
+        if (
+            folderKey === projectKey ||
+            folderKey.startsWith(`${projectKey}/`) ||
+            projectKey.startsWith(`${folderKey}/`)
+        ) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function collectFromWorkspaceFolder(workspaceDir: string, output: Set<string>, maxFiles: number): void {
+    for (const transcriptDir of CHAT_TRANSCRIPT_DIRS) {
+        if (output.size >= maxFiles) {
+            break;
+        }
+
+        collectChatFilesInDirectory(path.join(workspaceDir, transcriptDir), output, maxFiles);
+    }
+}
+
+function collectFromWorkspaceStorageRoot(
+    storageRoot: string,
+    output: Set<string>,
+    maxFiles: number,
+    projectPath: string
+): void {
     if (!fs.existsSync(storageRoot) || output.size >= maxFiles) {
         return;
     }
@@ -374,15 +544,30 @@ function collectFromWorkspaceStorageRoot(storageRoot: string, output: Set<string
         return;
     }
 
+    const matches: string[] = [];
+    const allWorkspaceDirs: string[] = [];
+
     for (const folder of folders) {
         if (!folder.isDirectory() || output.size >= maxFiles) {
             continue;
         }
 
         const workspaceDir = path.join(storageRoot, folder.name);
-        collectChatFilesInDirectory(path.join(workspaceDir, "chatSessions"), output, maxFiles);
-        collectChatFilesInDirectory(path.join(workspaceDir, "GitHub.copilot-chat", "transcripts"), output, maxFiles);
-        collectChatFilesInDirectory(path.join(workspaceDir, "ms-vscode.copilot-chat", "transcripts"), output, maxFiles);
+        allWorkspaceDirs.push(workspaceDir);
+
+        if (workspaceFolderMatchesProject(workspaceDir, projectPath)) {
+            matches.push(workspaceDir);
+        }
+    }
+
+    const selectedWorkspaceDirs = matches.length > 0 ? matches : allWorkspaceDirs;
+
+    for (const workspaceDir of selectedWorkspaceDirs) {
+        if (output.size >= maxFiles) {
+            break;
+        }
+
+        collectFromWorkspaceFolder(workspaceDir, output, maxFiles);
     }
 }
 
@@ -422,7 +607,7 @@ function discoverChatSessionFiles(
             break;
         }
 
-        collectFromWorkspaceStorageRoot(root, discovered, maxChatFiles);
+        collectFromWorkspaceStorageRoot(root, discovered, maxChatFiles, projectPath);
     }
 
     return [...discovered].sort((a, b) => a.localeCompare(b));

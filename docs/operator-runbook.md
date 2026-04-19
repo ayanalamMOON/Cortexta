@@ -89,18 +89,21 @@ pnpm run cortexa -- init
 ### 4) Ingest your project
 
 ```bash
-pnpm run cortexa -- ingest . --project-id=cortexta
+pnpm run cortexa -- ingest .
 ```
 
 Useful variants:
 
 ```bash
+pnpm run cortexa -- ingest
 pnpm run cortexa -- ingest . --project-id=cortexta --max-files=3000 --max-chat-files=500
 pnpm run cortexa -- ingest . --project-id=cortexta --no-include-chats
 pnpm run cortexa -- ingest . --project-id=cortexta --no-skip-unchanged
 ```
 
 > Default behavior uses incremental ingestion (`skip-unchanged=true`) so repeated runs avoid re-processing unchanged files.
+>
+> `projectId` is auto-inferred from folder name unless overridden. Chat discovery is workspace-aware by default (matching VS Code `workspaceStorage` first).
 
 ### 5) Smoke-test retrieval
 
@@ -115,6 +118,15 @@ pnpm run cortexa -- memory list --limit=5
 ```bash
 pnpm run cortexa:daemon
 ```
+
+Interactive alternative:
+
+```bash
+pnpm run cortexa
+```
+
+This starts daemon by default and opens `cortexa>` prompt; use `exit` to leave cleanly.
+
 To run MCP stdio transport for MCP-compatible clients:
 
 ```bash
@@ -261,6 +273,8 @@ pnpm run cortexa:daemon
 pnpm run cortexa -- daemon stop
 ```
 
+- If started by no-args interactive mode (`pnpm run cortexa`), type `exit`; in-process daemon is stopped automatically before shell exits.
+
 ---
 
 ## Troubleshooting cheat sheet
@@ -269,10 +283,13 @@ pnpm run cortexa -- daemon stop
 - Fix: reduce ingestion bounds:
   - `--max-files=<n>`
   - `--max-chat-files=<n>`
+  - `--no-include-chats` to skip transcript parsing when needed
   - set `CORTEXA_INGEST_MAX_FILE_BYTES` to skip very large files.
+- Note: ingestion now skips common heavyweight directories (`.venv`, `venv`, `.cache`, `target`, etc.) and scopes chat discovery to matching workspace storage first.
 
 **Symptom:** Vector backend unavailable (Qdrant/Chroma down)
 - Behavior: CORTEXA continues with SQLite-first operations and degraded vector ranking.
+- Behavior detail: vector operations enter retry cooldown to avoid repeated slow failures while backend is unavailable.
 - Fix: restore vector service or temporarily use `CORTEXA_VECTOR_PROVIDER=memory`.
 
 **Symptom:** API returns `unauthorized`

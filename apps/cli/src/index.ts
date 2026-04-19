@@ -27,6 +27,7 @@ const PRIMARY_CLI_COMMANDS = new Set([
     "ingest",
     "query",
     "context",
+    "agent",
     "agents",
     "evolve",
     "daemon",
@@ -45,7 +46,15 @@ export function normalizeArgv(argv: string[]): string[] {
     }
 
     if (index !== 2) {
-        return [argv[0], argv[1], ...argv.slice(index)];
+        argv = [argv[0], argv[1], ...argv.slice(index)];
+    }
+
+    const first = (argv[2] ?? "").toLowerCase();
+    if (first.startsWith("--") && first.length > 2) {
+        const candidate = first.slice(2);
+        if (PRIMARY_CLI_COMMANDS.has(candidate)) {
+            return [argv[0], argv[1], candidate, ...argv.slice(3)];
+        }
     }
 
     return argv;

@@ -79,7 +79,8 @@ export function renderCliHome(options: CliHomeOptions = {}): string {
 
     lines.push(palette.bold("Quick start"));
     lines.push(`  ${palette.success("$ pnpm run cortexa -- init")}`);
-    lines.push(`  ${palette.success("$ pnpm run cortexa -- ingest . --project-id=my-project")}`);
+    lines.push(`  ${palette.success("$ pnpm run cortexa -- ingest .")}`);
+    lines.push(`  ${palette.muted("  projectId auto-inferred from folder name (override with --project-id=<id>)")}`);
     lines.push(`  ${palette.success("$ pnpm run cortexa -- query \"how did we solve retry jitter?\"")}`);
     lines.push(`  ${palette.success("$ pnpm run cortexa -- context \"prepare implementation plan\"")}`);
     lines.push(`  ${palette.success("$ pnpm run cortexa -- agents list")}`);
@@ -90,8 +91,8 @@ export function renderCliHome(options: CliHomeOptions = {}): string {
         ...renderCommandRows(palette, [
             { command: "init", description: "Initialize SQLite schema and vector collection." },
             {
-                command: "ingest <path> [options]",
-                description: "Ingest code and optional chat sessions into memory."
+                command: "ingest [path] [options]",
+                description: "Ingest code and optional chats; projectId auto-inferred unless overridden."
             },
             { command: "query <text>", description: "Run hybrid retrieval over memories." },
             { command: "context <text>", description: "Compile a token-bounded context payload." },

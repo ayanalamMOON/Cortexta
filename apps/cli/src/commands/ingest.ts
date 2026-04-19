@@ -31,15 +31,16 @@ function parseMaxChatFiles(value: string): number {
 }
 
 export const ingestCommand = new Command("ingest")
-    .argument("<dir>", "Directory to ingest")
-    .description("Ingest source files into Cortexa memory")
+    .argument("[dir]", "Directory to ingest", ".")
+    .description("Ingest source files into Cortexa memory (projectId auto-inferred when omitted)")
     .option("--project-id <projectId>", "Project identifier override")
     .option("--include-chats", "Also ingest Copilot chat sessions", false)
     .option("--max-files <maxFiles>", "Maximum files to process", parseMaxFiles)
     .option("--max-chat-files <maxChatFiles>", "Maximum number of chat session files to parse", parseMaxChatFiles)
     .option("--chat-root <chatRoot>", "Optional workspaceStorage root for chat ingestion discovery")
-    .action(async (dir: string, options: { projectId?: string; includeChats?: boolean; maxFiles?: number; maxChatFiles?: number; chatRoot?: string }) => {
-        const projectPath = resolveProjectPath(dir);
+    .action(async (dir: string | undefined, options: { projectId?: string; includeChats?: boolean; maxFiles?: number; maxChatFiles?: number; chatRoot?: string }) => {
+        const inputDir = typeof dir === "string" && dir.trim().length > 0 ? dir : ".";
+        const projectPath = resolveProjectPath(inputDir);
         const stats = await fs.promises.stat(projectPath).catch(() => null);
         if (!stats?.isDirectory()) {
             throw new Error(`Ingest path is not a directory: ${projectPath}`);

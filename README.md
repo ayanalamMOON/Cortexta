@@ -17,13 +17,16 @@ CORTEXA is a local-first memory runtime for software development workflows. It i
 
 This README is fully updated for:
 - primary `cortexa` CLI wiring (ingestion, resurrection, compaction, dashboard)
+- no-args interactive shell mode (`pnpm run cortexa`) with default daemon startup and clean `exit`
 - primary `cortexa` progression evolve command telemetry
 - compaction + deterministic resurrection pipeline
 - third-wave compaction dashboard payload with trend snapshots and per-project risk/anomaly reporting
 - daemon HTTP/WS routes and operational scripts
+- top-level command normalization (`--daemon`, `--memory`, etc.) and `agent` alias support
 - branch-aware memory forking/merge workflows (`main` + custom branches)
 - temporal retrieval + diff APIs for time-travel context reconstruction (`asOf`)
 - intent-aware proactive context suggestions and daemon stream events (`contextSuggested`, `branchSwitched`, `agentStatus`, `sessionResurrectionStatus`)
+- ingestion defaults + performance hardening (optional path/projectId inference, workspace-scoped chat discovery, expanded skip dirs, vector retry cooldown)
 - unified agent orchestration surface (planner/refactor/writer/critic/compressor + evolution and multi-agent loop)
 
 ## System map
@@ -174,8 +177,12 @@ pnpm run typecheck
 pnpm install
 pnpm run doctor
 
+# optional: interactive mode (starts daemon by default)
+pnpm run cortexa
+
 # 1) ingest project memory
-pnpm run cortexa -- ingest . --project-id=my-project --max-files=500 --no-include-chats
+pnpm run cortexa -- ingest . --max-files=500 --no-include-chats
+# projectId auto-inferred from folder name unless overridden
 
 # 2) retrieve and compile context
 pnpm run cortexa -- query "how is cxlink context assembled?"
@@ -213,6 +220,9 @@ pnpm run cortexa -- <command> [args]
 ```
 
 > The `--` delimiter is intentionally supported/normalized in the primary CLI.
+> Top-level `--<command>` forms (example: `--daemon`) are also normalized.
+>
+> Running `pnpm run cortexa` with no command starts daemon (if needed) and opens the interactive `cortexa>` shell.
 
 ### Command reference
 
@@ -229,11 +239,11 @@ pnpm run cortexa -- init
 Ingest code and (by default) chat sessions.
 
 ```bash
-pnpm run cortexa -- ingest <path> [options]
+pnpm run cortexa -- ingest [path] [options]
 ```
 
 Options:
-- `--project-id=<id>`
+- `--project-id=<id>` (optional; defaults to the target folder name)
 - `--branch=<name>` (default `main`)
 - `--no-include-chats`
 - `--no-skip-unchanged` (force full re-ingest)
@@ -242,9 +252,15 @@ Options:
 - `--max-chat-files=<n>`
 - `--chat-root=<path>`
 
+Notes:
+- `path` is optional; if omitted, current working directory is used.
+- chat ingestion discovers transcripts from matching VS Code `workspaceStorage` first (when resolvable), then falls back to broader roots.
+- common heavyweight directories (`.venv`, `venv`, `.cache`, `target`, etc.) are skipped during code walk.
+
 Examples:
 
 ```bash
+pnpm run cortexa -- ingest
 pnpm run cortexa -- ingest .
 pnpm run cortexa -- ingest . --project-id=my-service --max-files=1500 --max-chat-files=500
 pnpm run cortexa -- ingest . --no-include-chats
@@ -293,6 +309,8 @@ pnpm run cortexa -- agents run multi_agent_loop "prepare full implementation str
 pnpm run cortexa -- agents run multi_agent_loop "persist evolution result" --project-id=my-service --apply
 ```
 
+`agent` is accepted as a top-level alias for `agents`.
+
 Subcommands:
 - `list` → returns all available agents with family + mutation metadata
 - `run <agent> <text>` → executes a specific agent (`writer`, `critic`, `compressor`, `planner`, `refactor`, `evolution_writer`, `evolution_critic`, `evolution_consolidator`, `evolution_archivist`, `multi_agent_loop`)
@@ -312,10 +330,14 @@ Common options:
 Manage local daemon runtime.
 
 ```bash
+pnpm run cortexa
 pnpm run cortexa -- daemon start
+pnpm run cortexa -- --daemon status
 pnpm run cortexa -- daemon status
 pnpm run cortexa -- daemon stop
 ```
+
+When daemon is started in-process by no-args interactive mode, typing `exit` cleanly shuts it down before process exit.
 
 #### `memory`
 
@@ -631,6 +653,8 @@ pnpm run typecheck
 pnpm run test:unit
 pnpm run test:observability
 pnpm run test:mcp
+pnpm run test:ingestion
+pnpm run test:ingestion-scope
 pnpm run test:self-healing
 pnpm run test:session-resurrection
 pnpm run test:compaction
@@ -657,9 +681,14 @@ For containerized deployments, see [`docs/containerization.md`](docs/containeriz
 ## Troubleshooting
 
 - **Unexpected daemon startup while running CLI command**
-  - primary CLI now lazy-loads daemon command; non-daemon commands should not auto-start daemon.
+  - no-args mode (`pnpm run cortexa`) intentionally starts daemon + interactive shell.
+  - command mode (`pnpm run cortexa -- <command>`) lazy-loads daemon command paths only.
+- **`ingest` scans too much or appears slow**
+  - ingestion now skips common heavy directories (`.venv`, `venv`, `.cache`, `target`, etc.) and scopes chat discovery to the current workspace when available.
+  - tune with `--max-files`, `--max-chat-files`, `--no-include-chats`, and `CORTEXA_INGEST_MAX_FILE_BYTES`.
 - **Vector backend unavailable messages**
   - CORTEXA falls back to SQLite lexical behavior and deterministic embeddings where possible.
+  - vector operations enter a short retry cooldown to avoid repeated slow failures while backend is down.
 - **Backfill did not persist**
   - `memory backfill` and `compact:memory` default to dry-run; use `--apply`.
 - **No dashboard trend points**
@@ -689,6 +718,8 @@ pnpm run test:self-healing
 pnpm run test:session-resurrection
 pnpm run test:observability
 pnpm run test:mcp
+pnpm run test:ingestion
+pnpm run test:ingestion-scope
 pnpm run test:compaction
 pnpm run test:branch-temporal
 pnpm run test:agents-realistic

@@ -21,9 +21,25 @@ flowchart LR
 
 ## [Unreleased]
 
+### Added
+
+- No-args primary CLI interactive shell mode (`pnpm run cortexa`) that starts daemon by default and accepts inline commands.
+- Top-level command normalization for `--<command>` forms and `agent` alias routing to `agents`.
+- Ingestion scope integration coverage (`test:ingestion-scope`) validating workspace-scoped chat ingestion and `.venv` skip behavior.
+
 ### Changed
 
 - Git release automation now auto-tags `v<package-version>` on `main` version bumps via GitHub Actions; tag push continues to build and publish GitHub Releases.
+- Ingest command UX now supports optional path and project-id inference from target folder.
+- Ingestion pipeline now skips common heavy local/runtime directories (`.venv`, `venv`, `.cache`, `target`, etc.).
+- Copilot chat transcript discovery now prefers current workspace-scoped `workspaceStorage` before broader root fallback.
+- Documentation refreshed across README/runbook/API/contributing to match current CLI and ingestion behavior.
+
+### Fixed
+
+- Daemon start now handles already-running instances and `EADDRINUSE` conflicts without crashing command flow.
+- Vector backend outage handling now applies retry cooldown to avoid repeated slow failures while continuing SQLite-first operations.
+- Interactive shell exit now returns cleanly (`exit` path returns code `0`) and stops in-process daemon when owned by that shell.
 
 ## [0.1.2] - 2026-04-19
 

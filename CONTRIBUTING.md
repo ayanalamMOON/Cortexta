@@ -52,6 +52,7 @@ pnpm run test:mcp
 pnpm run test:cli-routing
 pnpm run test:evolution
 pnpm run test:ingestion
+pnpm run test:ingestion-scope
 pnpm run test:compaction
 pnpm run test:self-healing
 pnpm run test:session-resurrection
@@ -62,7 +63,7 @@ For daemon/API route changes, also run a quick live smoke check:
 
 ```bash
 pnpm run cortexa -- doctor
-pnpm run cortexa -- ingest . --project-id=contrib-smoke --max-files=200 --no-include-chats
+pnpm run cortexa -- ingest . --max-files=200 --no-include-chats
 pnpm run cortexa -- query "smoke"
 pnpm run cortexa -- context "smoke"
 pnpm run cortexa -- evolve "smoke" --dry-run --json

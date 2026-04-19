@@ -47,6 +47,7 @@
         "test:evolution": "pnpm exec ts-node tests/memory-evolution.integration.ts",
         "test:self-healing": "pnpm exec ts-node tests/self-healing.scheduler.integration.ts",
         "test:ingestion": "pnpm exec ts-node tests/ingestion.incremental.integration.ts",
+        "test:ingestion-scope": "pnpm exec ts-node tests/ingestion.workspace-scope.integration.ts",
         "test:compaction": "pnpm exec ts-node tests/compaction.integration.ts",
         "test:observability": "pnpm exec ts-node tests/observability.metrics.unit.ts",
         "test:session-resurrection": "pnpm exec ts-node tests/session-resurrection.scheduler.integration.ts",

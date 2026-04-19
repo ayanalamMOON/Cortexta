@@ -118,20 +118,20 @@ flowchart TD
 
 Notes:
 - `path` is required.
+- `projectId` is optional; when omitted, it is inferred from the provided path.
 - `includeChats` defaults to `false` for API calls unless provided.
 - `skipUnchanged` defaults to `true` for API calls.
+- if `includeChats=true` and `chatRoot` is omitted, transcript discovery scopes to matching workspace storage first, then falls back to broader roots.
 
 **Request**
 ```json
 {
   "path": "C:/Users/ayana/Projects/Cortexta",
-  "projectId": "cortexta",
   "branch": "feature/auth-refactor",
   "includeChats": true,
   "skipUnchanged": true,
   "maxFiles": 3000,
-  "maxChatFiles": 500,
-  "chatRoot": "C:/Users/ayana/AppData/Roaming/Code/User/workspaceStorage"
+  "maxChatFiles": 500
 }
 ```
 
@@ -148,6 +148,9 @@ Notes:
     "codeChunks": 1910,
     "chatTurns": 220,
     "memoriesStored": 2130,
+    "staleMemoriesRemoved": 41,
+    "staleCodeMemoriesRemoved": 19,
+    "staleChatMemoriesRemoved": 22,
     "skipUnchanged": true,
     "ingestVersion": "ingest-v2",
     "errors": []

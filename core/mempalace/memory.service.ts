@@ -60,12 +60,14 @@ const DEFAULT_RESURRECTION_AUDIT_LIMIT = 5000;
 const DEFAULT_RESURRECTION_AUDIT_MAX_ISSUES = 10;
 const MAIN_BRANCH = "main";
 const DEFAULT_TEMPORAL_DIFF_LIMIT = 200;
+const VECTOR_RETRY_COOLDOWN_MS = 30_000;
 
 const db = connectSqlite();
 initializeSqlite(db);
 
 let vectorReady = false;
 let vectorUnavailableWarningPrinted = false;
+let vectorRetryAfterMs = 0;
 
 interface CompactionAggregateRow {
     projectId: string;
@@ -187,6 +189,21 @@ function warnVectorUnavailableOnce(action: string, error: unknown): void {
         `[cortexa:mempalace] Vector backend unavailable during ${action}; continuing with SQLite-only memory operations.`,
         detail
     );
+}
+
+function isVectorRetryOnCooldown(now = Date.now()): boolean {
+    return now < vectorRetryAfterMs;
+}
+
+function markVectorUnavailable(action: string, error: unknown): void {
+    vectorReady = false;
+    vectorRetryAfterMs = Date.now() + VECTOR_RETRY_COOLDOWN_MS;
+    warnVectorUnavailableOnce(action, error);
+}
+
+function markVectorHealthy(): void {
+    vectorRetryAfterMs = 0;
+    vectorUnavailableWarningPrinted = false;
 }
 
 async function ensureVectorReady(): Promise<void> {
@@ -1454,7 +1471,7 @@ export async function upsertMemory(input: CreateMemoryInput): Promise<MemoryReco
         }
     });
 
-    if (embedding.length > 0) {
+    if (embedding.length > 0 && !isVectorRetryOnCooldown()) {
         try {
             await ensureVectorReady();
             await upsertVectorItem(MEMORY_COLLECTION, {
@@ -1472,9 +1489,9 @@ export async function upsertMemory(input: CreateMemoryInput): Promise<MemoryReco
                     sourceRef: memory.sourceRef ?? null
                 }
             });
+            markVectorHealthy();
         } catch (error) {
-            vectorReady = false;
-            warnVectorUnavailableOnce("upsert", error);
+            markVectorUnavailable("upsert", error);
         }
     }
 
@@ -2097,9 +2114,9 @@ export async function searchMemories(
         });
     }
 
-    try {
-        const queryEmbedding = await embedText(q);
-        if (queryEmbedding.length > 0) {
+    const queryEmbedding = await embedText(q);
+    if (queryEmbedding.length > 0 && !isVectorRetryOnCooldown()) {
+        try {
             await ensureVectorReady();
             const vectorHits = await searchVectorItems(MEMORY_COLLECTION, queryEmbedding, topK * 3);
 
@@ -2124,9 +2141,10 @@ export async function searchMemories(
                     recency
                 });
             }
+            markVectorHealthy();
+        } catch (error) {
+            markVectorUnavailable("search", error);
         }
-    } catch {
-        // Keep lexical-only results if vector layer is unavailable.
     }
 
     return [...merged.values()]
@@ -2479,8 +2497,7 @@ export async function deleteMemory(
             try {
                 await deleteVectorItems(MEMORY_COLLECTION, [String(row.id)]);
             } catch (error) {
-                vectorReady = false;
-                warnVectorUnavailableOnce("delete", error);
+                markVectorUnavailable("delete", error);
             }
         }
 
@@ -2522,8 +2539,7 @@ export async function deleteMemory(
         try {
             await deleteVectorItems(MEMORY_COLLECTION, localRows);
         } catch (error) {
-            vectorReady = false;
-            warnVectorUnavailableOnce("delete", error);
+            markVectorUnavailable("delete", error);
         }
     }
 
@@ -2619,8 +2635,7 @@ export async function deleteMemoriesByIds(
         try {
             await deleteVectorItems(MEMORY_COLLECTION, batch);
         } catch (error) {
-            vectorReady = false;
-            warnVectorUnavailableOnce("delete", error);
+            markVectorUnavailable("delete", error);
         }
     }
 
