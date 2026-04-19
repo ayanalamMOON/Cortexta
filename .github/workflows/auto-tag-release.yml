@@ -1,0 +1,85 @@
+name: Auto Tag Release
+
+"on":
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: auto-tag-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  tag-on-version-bump:
+    name: Tag release from package version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve package version
+        id: version
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package.json').version")"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid package version: $version"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Create and push release tag when version changes
+        id: tag
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ steps.version.outputs.tag }}
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+
+          should_tag="false"
+
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            should_tag="true"
+          elif [[ -n "$BEFORE" ]] && [[ "$BEFORE" != "0000000000000000000000000000000000000000" ]] && git cat-file -e "${BEFORE}:package.json" 2>/dev/null; then
+            previous_version="$(git show "${BEFORE}:package.json" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>process.stdout.write(JSON.parse(d).version || ''))")"
+            if [[ "$previous_version" != "$VERSION" ]]; then
+              should_tag="true"
+            fi
+          fi
+
+          if [[ "$should_tag" != "true" ]]; then
+            echo "created=false" >> "$GITHUB_OUTPUT"
+            echo "reason=Skipped: package.json version was not changed in this push." >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if git ls-remote --tags origin "refs/tags/${TAG}" | grep -q .; then
+            echo "created=false" >> "$GITHUB_OUTPUT"
+            echo "reason=Skipped: ${TAG} already exists." >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "$TAG"
+
+          echo "created=true" >> "$GITHUB_OUTPUT"
+          echo "reason=Created and pushed ${TAG}." >> "$GITHUB_OUTPUT"
+
+      - name: Release tagging summary
+        run: |
+          echo "Tag candidate: ${{ steps.version.outputs.tag }}"
+          echo "Tag created: ${{ steps.tag.outputs.created }}"
+          echo "Result: ${{ steps.tag.outputs.reason }}"

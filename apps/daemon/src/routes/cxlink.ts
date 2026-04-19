@@ -3,9 +3,13 @@ import { toBoolean, toBoundedInt, toBoundedNumber, toRecord, toTrimmedString } f
 import {
     auditMemoryResurrection,
     backfillMemoryCompaction,
+    createMemoryBranch,
+    diffMemoriesBetween,
     getMemoryCompactionDashboard,
     getMemoryCompactionOpportunities,
-    getMemoryCompactionStats
+    getMemoryCompactionStats,
+    listMemoryBranches,
+    mergeMemoryBranch
 } from "../../../../core/mempalace/memory.service";
 import { retrieveTopK } from "../../../../core/retrieval/retriever";
 import { buildPromptEnvelope } from "../../../../packages/core/src/cxlink/adapter";
@@ -16,6 +20,7 @@ import {
     getSelfHealingStatus,
     triggerSelfHealingNow
 } from "../self-healing";
+import { emitDaemonStreamEvent } from "../stream/events";
 
 export const cxlinkRouter = express.Router();
 
@@ -74,13 +79,17 @@ async function buildCxlinkBundle(params: {
     query: string;
     agent?: string;
     projectId?: string;
+    branch?: string;
     topK?: number;
     minScore?: number;
+    asOf?: number;
 }): Promise<CxlinkBundle> {
     const memories = await retrieveTopK(params.query, {
         projectId: params.projectId,
+        branch: params.branch,
         topK: params.topK,
-        minScore: params.minScore
+        minScore: params.minScore,
+        asOf: params.asOf
     });
 
     const atoms: ContextAtom[] = memories.map((memory) => {
@@ -360,8 +369,10 @@ cxlinkRouter.post("/context", async (req: any, res: any) => {
     const query = toTrimmedString(body.query, 16_384);
     const agent = toTrimmedString(body.agent, 256);
     const projectId = toTrimmedString(body.projectId, 256);
+    const branch = toTrimmedString(body.branch, 128);
     const topK = toBoundedInt(body.topK, 1, 50);
     const minScore = toBoundedNumber(body.minScore, 0, 1);
+    const asOf = toBoundedInt(body.asOf, 0, 32_503_680_000_000);
 
     if (!query) {
         res.status(400).json({ ok: false, error: "Missing required field: query" });
@@ -373,14 +384,18 @@ cxlinkRouter.post("/context", async (req: any, res: any) => {
             query,
             agent,
             projectId,
+            branch,
             topK: topK ?? 12,
-            minScore
+            minScore,
+            asOf
         });
 
         res.json({
             ok: true,
             route: "cxlink/context",
             agent: bundle.resolved.agent,
+            branch: branch ?? "main",
+            asOf: Number.isFinite(asOf) ? asOf : undefined,
             tokens: bundle.resolved.tokens,
             memoryHealth: bundle.memoryHealth,
             context: bundle.resolved.context.rendered,
@@ -400,8 +415,10 @@ cxlinkRouter.post("/query", async (req: any, res: any) => {
     const query = toTrimmedString(body.query, 16_384);
     const agent = toTrimmedString(body.agent, 256);
     const projectId = toTrimmedString(body.projectId, 256);
+    const branch = toTrimmedString(body.branch, 128);
     const topK = toBoundedInt(body.topK, 1, 50);
     const minScore = toBoundedNumber(body.minScore, 0, 1);
+    const asOf = toBoundedInt(body.asOf, 0, 32_503_680_000_000);
 
     if (!query) {
         res.status(400).json({ ok: false, error: "Missing required field: query" });
@@ -413,14 +430,18 @@ cxlinkRouter.post("/query", async (req: any, res: any) => {
             query,
             agent,
             projectId,
+            branch,
             topK: topK ?? 12,
-            minScore
+            minScore,
+            asOf
         });
 
         res.json({
             ok: true,
             route: "cxlink/query",
             query,
+            branch: branch ?? "main",
+            asOf: Number.isFinite(asOf) ? asOf : undefined,
             count: bundle.memories.length,
             memoryHealth: bundle.memoryHealth,
             results: bundle.memories,
@@ -440,8 +461,10 @@ cxlinkRouter.post("/plan", async (req: any, res: any) => {
     const query = toTrimmedString(body.query, 16_384);
     const agent = toTrimmedString(body.agent, 256);
     const projectId = toTrimmedString(body.projectId, 256);
+    const branch = toTrimmedString(body.branch, 128);
     const topK = toBoundedInt(body.topK, 1, 50);
     const minScore = toBoundedNumber(body.minScore, 0, 1);
+    const asOf = toBoundedInt(body.asOf, 0, 32_503_680_000_000);
 
     if (!query) {
         res.status(400).json({ ok: false, error: "Missing required field: query" });
@@ -453,8 +476,10 @@ cxlinkRouter.post("/plan", async (req: any, res: any) => {
             query,
             agent,
             projectId,
+            branch,
             topK: topK ?? 12,
-            minScore
+            minScore,
+            asOf
         });
 
         const steps = buildExecutionPlan(query, bundle.memories);
@@ -464,11 +489,263 @@ cxlinkRouter.post("/plan", async (req: any, res: any) => {
             route: "cxlink/plan",
             query,
             agent: bundle.resolved.agent,
+            branch: branch ?? "main",
+            asOf: Number.isFinite(asOf) ? asOf : undefined,
             tokens: bundle.resolved.tokens,
             memoryHealth: bundle.memoryHealth,
             steps,
             cxf: bundle.cxf,
             envelope: bundle.envelope
+        });
+    } catch (error) {
+        res.status(500).json({
+            ok: false,
+            error: error instanceof Error ? error.message : String(error)
+        });
+    }
+});
+
+cxlinkRouter.post("/branch/list", (req: any, res: any) => {
+    const body = toRecord(req.body);
+    const projectId = toTrimmedString(body.projectId, 256);
+
+    if (!projectId) {
+        res.status(400).json({ ok: false, error: "Missing required field: projectId" });
+        return;
+    }
+
+    try {
+        const branches = listMemoryBranches(projectId);
+        res.json({
+            ok: true,
+            route: "cxlink/branch/list",
+            projectId,
+            branches
+        });
+    } catch (error) {
+        res.status(500).json({
+            ok: false,
+            error: error instanceof Error ? error.message : String(error)
+        });
+    }
+});
+
+cxlinkRouter.post("/branch/create", (req: any, res: any) => {
+    const body = toRecord(req.body);
+    const projectId = toTrimmedString(body.projectId, 256);
+    const branch = toTrimmedString(body.branch, 128);
+    const fromBranch = toTrimmedString(body.fromBranch, 128);
+    const forkedFromCommit = toTrimmedString(body.forkedFromCommit, 256);
+
+    if (!projectId) {
+        res.status(400).json({ ok: false, error: "Missing required field: projectId" });
+        return;
+    }
+
+    if (!branch) {
+        res.status(400).json({ ok: false, error: "Missing required field: branch" });
+        return;
+    }
+
+    try {
+        const created = createMemoryBranch({
+            projectId,
+            branch,
+            fromBranch,
+            forkedFromCommit
+        });
+
+        res.json({
+            ok: true,
+            route: "cxlink/branch/create",
+            created
+        });
+    } catch (error) {
+        res.status(500).json({
+            ok: false,
+            error: error instanceof Error ? error.message : String(error)
+        });
+    }
+});
+
+cxlinkRouter.post("/branch/merge", async (req: any, res: any) => {
+    const body = toRecord(req.body);
+    const projectId = toTrimmedString(body.projectId, 256);
+    const sourceBranch = toTrimmedString(body.sourceBranch, 128);
+    const targetBranch = toTrimmedString(body.targetBranch, 128);
+    const strategy = toTrimmedString(body.strategy, 32);
+
+    if (!projectId) {
+        res.status(400).json({ ok: false, error: "Missing required field: projectId" });
+        return;
+    }
+
+    if (!sourceBranch || !targetBranch) {
+        res.status(400).json({ ok: false, error: "Missing required fields: sourceBranch and targetBranch" });
+        return;
+    }
+
+    try {
+        const result = await mergeMemoryBranch({
+            projectId,
+            sourceBranch,
+            targetBranch,
+            strategy: strategy === "target-wins" ? "target-wins" : "source-wins"
+        });
+
+        res.json({
+            ok: true,
+            route: "cxlink/branch/merge",
+            result
+        });
+    } catch (error) {
+        res.status(500).json({
+            ok: false,
+            error: error instanceof Error ? error.message : String(error)
+        });
+    }
+});
+
+cxlinkRouter.post("/branch/switch", (req: any, res: any) => {
+    const body = toRecord(req.body);
+    const projectId = toTrimmedString(body.projectId, 256);
+    const fromBranch = toTrimmedString(body.fromBranch, 128) ?? "main";
+    const toBranch = toTrimmedString(body.toBranch, 128);
+    const reason = toTrimmedString(body.reason, 512) ?? "manual-switch";
+
+    if (!projectId) {
+        res.status(400).json({ ok: false, error: "Missing required field: projectId" });
+        return;
+    }
+
+    if (!toBranch) {
+        res.status(400).json({ ok: false, error: "Missing required field: toBranch" });
+        return;
+    }
+
+    try {
+        const ensured = createMemoryBranch({
+            projectId,
+            branch: toBranch,
+            fromBranch
+        });
+
+        const event = emitDaemonStreamEvent({
+            projectId,
+            eventType: "branchSwitched",
+            payload: {
+                fromBranch,
+                toBranch,
+                reason,
+                switchedAt: Date.now()
+            },
+            sessionId: `branch-switch-${Date.now().toString(36)}`
+        });
+
+        res.json({
+            ok: true,
+            route: "cxlink/branch/switch",
+            switched: {
+                projectId,
+                fromBranch,
+                toBranch,
+                reason
+            },
+            branch: ensured,
+            streamEvent: event
+        });
+    } catch (error) {
+        res.status(500).json({
+            ok: false,
+            error: error instanceof Error ? error.message : String(error)
+        });
+    }
+});
+
+cxlinkRouter.post("/temporal/query", async (req: any, res: any) => {
+    const body = toRecord(req.body);
+    const query = toTrimmedString(body.query, 16_384);
+    const projectId = toTrimmedString(body.projectId, 256);
+    const branch = toTrimmedString(body.branch, 128);
+    const asOf = toBoundedInt(body.asOf, 0, 32_503_680_000_000);
+    const topK = toBoundedInt(body.topK, 1, 50);
+    const minScore = toBoundedNumber(body.minScore, 0, 1);
+
+    if (!query) {
+        res.status(400).json({ ok: false, error: "Missing required field: query" });
+        return;
+    }
+
+    if (!projectId) {
+        res.status(400).json({ ok: false, error: "Missing required field: projectId" });
+        return;
+    }
+
+    if (!Number.isFinite(asOf)) {
+        res.status(400).json({ ok: false, error: "Missing required field: asOf" });
+        return;
+    }
+
+    try {
+        const results = await retrieveTopK(query, {
+            projectId,
+            branch,
+            asOf,
+            topK: topK ?? 12,
+            minScore
+        });
+
+        res.json({
+            ok: true,
+            route: "cxlink/temporal/query",
+            query,
+            projectId,
+            branch: branch ?? "main",
+            asOf,
+            count: results.length,
+            results
+        });
+    } catch (error) {
+        res.status(500).json({
+            ok: false,
+            error: error instanceof Error ? error.message : String(error)
+        });
+    }
+});
+
+cxlinkRouter.post("/temporal/diff", (req: any, res: any) => {
+    const body = toRecord(req.body);
+    const projectId = toTrimmedString(body.projectId, 256);
+    const branch = toTrimmedString(body.branch, 128);
+    const from = toBoundedInt(body.from, 0, 32_503_680_000_000);
+    const to = toBoundedInt(body.to, 0, 32_503_680_000_000);
+    const limit = toBoundedInt(body.limit, 1, 2000);
+    const fromValue = typeof from === "number" && Number.isFinite(from) ? from : undefined;
+    const toValue = typeof to === "number" && Number.isFinite(to) ? to : undefined;
+
+    if (!projectId) {
+        res.status(400).json({ ok: false, error: "Missing required field: projectId" });
+        return;
+    }
+
+    if (fromValue === undefined || toValue === undefined) {
+        res.status(400).json({ ok: false, error: "Missing required fields: from and to" });
+        return;
+    }
+
+    try {
+        const diff = diffMemoriesBetween({
+            projectId,
+            branch,
+            from: fromValue,
+            to: toValue,
+            limit
+        });
+
+        res.json({
+            ok: true,
+            route: "cxlink/temporal/diff",
+            diff
         });
     } catch (error) {
         res.status(500).json({

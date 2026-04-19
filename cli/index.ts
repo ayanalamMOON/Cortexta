@@ -45,10 +45,10 @@ export async function runCli(): Promise<void> {
             await ingestCommand(args[1], args.slice(2));
             return;
         case "query":
-            await queryCommand(args.slice(1).join(" "));
+            await queryCommand(args.slice(1));
             return;
         case "context":
-            await contextCommand(args.slice(1).join(" "));
+            await contextCommand(args.slice(1));
             return;
         case "doctor":
             await doctor();

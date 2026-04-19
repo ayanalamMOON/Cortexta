@@ -1,7 +1,7 @@
 {
-    "name": "cortexa",
+    "name": "@ayanpartan/cortexa",
     "private": false,
-    "version": "0.1.0",
+    "version": "0.1.2",
     "description": "CORTEXA developer cognition system scaffold",
     "license": "MIT",
     "repository": {
@@ -49,6 +49,7 @@
         "test:ingestion": "pnpm exec ts-node tests/ingestion.incremental.integration.ts",
         "test:compaction": "pnpm exec ts-node tests/compaction.integration.ts",
         "test:observability": "pnpm exec ts-node tests/observability.metrics.unit.ts",
+        "test:branch-temporal": "pnpm exec ts-node tests/branch-temporal.integration.ts",
         "test:cli-routing": "pnpm exec ts-node tests/apps-cli-routing.integration.ts",
         "test:mcp": "pnpm exec ts-node tests/mcp-server.integration.ts",
         "test:daemons": "pnpm exec ts-node tests/daemon.integration.ts",

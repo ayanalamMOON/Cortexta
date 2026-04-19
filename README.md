@@ -21,6 +21,9 @@ This README is fully updated for:
 - compaction + deterministic resurrection pipeline
 - third-wave compaction dashboard payload with trend snapshots and per-project risk/anomaly reporting
 - daemon HTTP/WS routes and operational scripts
+- branch-aware memory forking/merge workflows (`main` + custom branches)
+- temporal retrieval + diff APIs for time-travel context reconstruction (`asOf`)
+- intent-aware proactive context suggestions and daemon stream events (`contextSuggested`, `branchSwitched`)
 
 ---
 
@@ -29,6 +32,8 @@ This README is fully updated for:
 - **Hybrid memory store (`Mempalace`)**
   - SQLite metadata (`better-sqlite3`)
   - vector index provider: `qdrant` / `chroma` / in-memory fallback
+  - branch-aware overlay model with copy-on-write rows + branch tombstones
+  - temporal snapshot timeline for as-of retrieval and memory diffs
 - **Ingestion pipeline**
   - code parsing/chunking + AST-derived hints
   - optional Copilot chat transcript/session ingestion
@@ -51,12 +56,16 @@ This README is fully updated for:
 - **Context compiler**
   - token-bounded packing
   - copilot-friendly content summaries (`copilotContent`) for lower token cost
+  - branch/as-of aware retrieval threading
+  - intent-aware proactive suggestion hints (topK/tokens/scope/constraints)
 - **MCP stdio transport**
   - full JSON-RPC framing over stdio for MCP-compatible clients
   - modular tool catalog bridging daemon + CX-LINK APIs
   - MCP context codec tools (`cortexa_encode_mcp_ctx` / `cortexa_decode_mcp_ctx`)
 - **Daemon APIs + WS stream**
   - query/context/evolve/cxlink + compaction endpoints
+  - branch management and temporal diff/query endpoints
+  - stream deltas for proactive suggestion + branch switch notifications
 
 ---
 
@@ -181,6 +190,7 @@ pnpm run cortexa -- ingest <path> [options]
 
 Options:
 - `--project-id=<id>`
+- `--branch=<name>` (default `main`)
 - `--no-include-chats`
 - `--no-skip-unchanged` (force full re-ingest)
 - `--skip-unchanged=<true|false>`
@@ -202,6 +212,7 @@ Hybrid memory retrieval.
 
 ```bash
 pnpm run cortexa -- query "how did we harden websocket streaming?"
+pnpm run cortexa -- query "why is auth flow failing" --project-id=my-service --branch=feature/auth --top-k=12 --min-score=0.4 --as-of=1713433000000
 ```
 
 #### `context`
@@ -210,6 +221,7 @@ Compile a prompt-ready context payload.
 
 ```bash
 pnpm run cortexa -- context "add retry-safe checkpointing"
+pnpm run cortexa -- context "stabilize flaky integration tests" --project-id=my-service --branch=release/next --as-of=1713433000000 --top-k=14 --max-tokens=5200
 ```
 
 #### `evolve`
@@ -246,11 +258,16 @@ pnpm run cortexa -- memory <action> [args/options]
 
 Actions:
 
-- `list [projectId] [--limit=<n>]`
-- `search <query> [--project-id=<id>] [--top-k=<n>] [--min-score=<0..1>]`
-- `get <id> [--full]`
-- `resurrect <id> [--full]`
-- `delete <id>`
+- `list [projectId] [--limit=<n>] [--branch=<name>] [--as-of=<unix-ms>]`
+- `search <query> [--project-id=<id>] [--branch=<name>] [--as-of=<unix-ms>] [--top-k=<n>] [--min-score=<0..1>]`
+- `get <id> [--project-id=<id>] [--branch=<name>] [--as-of=<unix-ms>] [--full]`
+- `resurrect <id> [--project-id=<id>] [--branch=<name>] [--as-of=<unix-ms>] [--full]`
+- `delete <id> [--project-id=<id>] [--branch=<name>]`
+- `branch list --project-id=<id>`
+- `branch create <branch> --project-id=<id> [--from-branch=<name>] [--forked-from-commit=<sha>]`
+- `branch merge <source> <target> --project-id=<id> [--strategy=<source-wins|target-wins>]`
+- `branch switch <target> --project-id=<id> [--from-branch=<name>]`
+- `temporal diff --project-id=<id> [--branch=<name>] --from=<unix-ms> --to=<unix-ms> [--limit=<n>]`
 - `stats [--project-id=<id>]`
 - `audit [--project-id=<id>] [--limit=<n>] [--max-issues=<n>] [--json]`
 - `backfill [--project-id=<id>] [--limit=<n>] [--apply]`
@@ -261,6 +278,9 @@ Examples:
 ```bash
 pnpm run cortexa -- memory list --limit=20
 pnpm run cortexa -- memory search "compaction checksum"
+pnpm run cortexa -- memory branch create feature/auth-refactor --project-id=Cortexta --from-branch=main
+pnpm run cortexa -- memory branch merge feature/auth-refactor release/next --project-id=Cortexta --strategy=source-wins
+pnpm run cortexa -- memory temporal diff --project-id=Cortexta --branch=feature/auth-refactor --from=1713432000000 --to=1713434000000
 pnpm run cortexa -- memory resurrect <id>
 pnpm run cortexa -- memory stats --project-id=Cortexta
 pnpm run cortexa -- memory audit --project-id=Cortexta --limit=5000 --max-issues=10
@@ -344,11 +364,18 @@ Base default:
 - `POST /ingest`
 - `POST /query`
 - `POST /context`
+- `POST /context/suggest`
 - `POST /evolve`
 - `POST /evolve/progression`
 - `POST /cxlink/context`
 - `POST /cxlink/query`
 - `POST /cxlink/plan`
+- `POST /cxlink/branch/list`
+- `POST /cxlink/branch/create`
+- `POST /cxlink/branch/merge`
+- `POST /cxlink/branch/switch`
+- `POST /cxlink/temporal/query`
+- `POST /cxlink/temporal/diff`
 - `POST /cxlink/compaction/stats`
 - `POST /cxlink/compaction/backfill`
 - `POST /cxlink/compaction/dashboard`
@@ -357,6 +384,10 @@ Base default:
 - `POST /cxlink/compaction/self-heal/trigger`
 
 `/cxlink/context`, `/cxlink/query`, and `/cxlink/plan` responses now also include a `memoryHealth` signal so agent runtimes can react to compaction/anomaly posture.
+
+`/query`, `/context`, `/cxlink/context`, `/cxlink/query`, and `/cxlink/plan` accept branch-aware and temporal options (`branch`, `asOf`).
+
+`/context` and `/query` now return an intent-aware `suggestion`; `/context/suggest` provides a dedicated proactive endpoint with optional warmup context compilation.
 
 The daemon health payload now includes summarized self-healing scheduler status (`enabled`, `started`, `running`, `nextRunAt`, `lastScheduledDelayMs`, `consecutiveFailures`, `lastOutcome`, `runCount`, `slo`).
 
@@ -491,6 +522,7 @@ pnpm run test:observability
 pnpm run test:mcp
 pnpm run test:self-healing
 pnpm run test:compaction
+pnpm run test:branch-temporal
 pnpm run test:daemons
 ```
 
@@ -503,7 +535,7 @@ CI runs on GitHub Actions with a Node matrix (`20`, `22`) and an integration sui
 - License: [MIT](LICENSE)
 - npm package metadata is configured for public distribution (`cortexa`)
 - Runtime support: Node `^20.11.1` and `^22.0.0`
-- release automation is available via tag-driven GitHub workflow (`v*.*.*`)
+- release automation is available via GitHub Actions: version bump on `main` auto-tags `v<version>`, and tag push triggers release workflow (`v*.*.*`)
 
 For containerized deployments, see [`docs/containerization.md`](docs/containerization.md).
 
@@ -538,6 +570,7 @@ pnpm run test:self-healing
 pnpm run test:observability
 pnpm run test:mcp
 pnpm run test:compaction
+pnpm run test:branch-temporal
 pnpm run test:daemons
 pnpm run cortexa -- <command>
 pnpm run cortexa:daemon

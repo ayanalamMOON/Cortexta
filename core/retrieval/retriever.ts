@@ -5,15 +5,19 @@ import { rankMemories } from "./ranking";
 
 export interface RetrieveOptions {
     projectId?: string;
+    branch?: string;
     topK?: number;
     minScore?: number;
+    asOf?: number;
 }
 
 export async function retrieveTopK(query: string, options: RetrieveOptions = {}): Promise<ScoredMemory[]> {
     const rows = await searchMemories(query, {
         projectId: options.projectId,
+        branch: options.branch,
         topK: (options.topK ?? 10) * 3,
-        minScore: options.minScore
+        minScore: options.minScore,
+        asOf: options.asOf
     });
 
     const filtered = filterByMinScore(

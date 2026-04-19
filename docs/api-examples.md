@@ -73,6 +73,7 @@ Notes:
 {
   "path": "C:/Users/ayana/Projects/Cortexta",
   "projectId": "cortexta",
+  "branch": "feature/auth-refactor",
   "includeChats": true,
   "skipUnchanged": true,
   "maxFiles": 3000,
@@ -108,8 +109,10 @@ Notes:
 {
   "query": "how is compaction dashboard built?",
   "projectId": "cortexta",
+  "branch": "feature/auth-refactor",
   "topK": 5,
-  "minScore": 0.55
+  "minScore": 0.55,
+  "asOf": 1713432172000
 }
 ```
 
@@ -122,7 +125,9 @@ Notes:
   "results": [
     {
       "id": "code_4b132f3a5b4f0f5dc7ab9123",
+      "logicalId": "code_4b132f3a5b4f0f5dc7ab9123",
       "projectId": "cortexta",
+      "branch": "feature/auth-refactor",
       "kind": "code_entity",
       "sourceType": "code",
       "title": "Compaction dashboard aggregation",
@@ -142,7 +147,25 @@ Notes:
       "similarity": 0.82,
       "recency": 0.9912
     }
-  ]
+  ],
+  "suggestion": {
+    "query": "how is compaction dashboard built?",
+    "projectId": "cortexta",
+    "branch": "feature/auth-refactor",
+    "intent": {
+      "category": "general",
+      "confidence": 0.45,
+      "matchedKeywords": []
+    },
+    "recommendedTopK": 12,
+    "recommendedMaxTokens": 4200,
+    "recommendedScope": "project + memory + retrieval",
+    "recommendedConstraints": [
+      "prefer high-confidence memories",
+      "keep context concise"
+    ],
+    "reason": "No dominant intent detected. Using balanced context defaults."
+  }
 }
 ```
 
@@ -153,8 +176,11 @@ Notes:
 {
   "query": "add a new risk dimension to compaction dashboard",
   "projectId": "cortexta",
+  "branch": "release/next",
+  "asOf": 1713432172000,
   "maxTokens": 4096,
   "topK": 12,
+  "proactive": true,
   "constraints": [
     "preserve existing API schema",
     "add integration tests"
@@ -171,7 +197,74 @@ Notes:
   "context": "### Objective\nAdd a new risk dimension ...",
   "tokens": 1328,
   "memoriesUsed": 8,
-  "dropped": 4
+  "dropped": 4,
+  "suggestion": {
+    "intent": {
+      "category": "feature",
+      "confidence": 0.72,
+      "matchedKeywords": [
+        "\\badd\\b",
+        "\\bfeature\\b"
+      ]
+    },
+    "recommendedTopK": 13,
+    "recommendedMaxTokens": 4800,
+    "recommendedScope": "requirements + touched modules",
+    "recommendedConstraints": [
+      "identify dependencies",
+      "capture migration impacts"
+    ]
+  }
+}
+```
+
+### POST `/context/suggest`
+
+Notes:
+- Generates proactive intent suggestions for the query.
+- Set `warmup=true` to also return compiled context using suggested defaults.
+
+**Request**
+```json
+{
+  "query": "investigate failing auth integration test",
+  "projectId": "cortexta",
+  "branch": "ops/hotfix",
+  "warmup": true,
+  "topK": 16,
+  "maxTokens": 5600
+}
+```
+
+**Response**
+```json
+{
+  "ok": true,
+  "route": "context/suggest",
+  "warmup": true,
+  "suggestion": {
+    "intent": {
+      "category": "debugging",
+      "confidence": 0.86,
+      "matchedKeywords": [
+        "\\bfail(?:ed|ing)?\\b"
+      ]
+    },
+    "recommendedTopK": 16,
+    "recommendedMaxTokens": 5600,
+    "recommendedScope": "runtime + diagnostics + memory",
+    "recommendedConstraints": [
+      "prioritize failure context",
+      "prefer latest affected entities"
+    ],
+    "reason": "Detected debugging intent from query signals; proactively tuned context packing."
+  },
+  "warmedContext": {
+    "context": "### Objective\nInvestigate failing auth integration test ...",
+    "tokens": 1492,
+    "memoriesUsed": 10,
+    "dropped": 2
+  }
 }
 ```
 
@@ -334,6 +427,8 @@ Notes:
   "query": "wire compaction stats into a dashboard widget",
   "agent": "cli",
   "projectId": "cortexta",
+  "branch": "release/next",
+  "asOf": 1713432172000,
   "topK": 12,
   "minScore": 0.5
 }
@@ -345,6 +440,8 @@ Notes:
   "ok": true,
   "route": "cxlink/context",
   "agent": "cli",
+  "branch": "release/next",
+  "asOf": 1713432172000,
   "tokens": 944,
   "memoryHealth": {
     "projectId": "cortexta",
@@ -369,6 +466,8 @@ Notes:
   "query": "memory backfill behavior",
   "agent": "cli",
   "projectId": "cortexta",
+  "branch": "release/next",
+  "asOf": 1713432172000,
   "topK": 6,
   "minScore": 0.5
 }
@@ -380,6 +479,8 @@ Notes:
   "ok": true,
   "route": "cxlink/query",
   "query": "memory backfill behavior",
+  "branch": "release/next",
+  "asOf": 1713432172000,
   "count": 1,
   "memoryHealth": {
     "projectId": "cortexta",
@@ -427,6 +528,8 @@ Notes:
   "query": "introduce retention alerting for compaction anomalies",
   "agent": "cli",
   "projectId": "cortexta",
+  "branch": "release/next",
+  "asOf": 1713432172000,
   "topK": 8,
   "minScore": 0.45
 }
@@ -439,6 +542,8 @@ Notes:
   "route": "cxlink/plan",
   "query": "introduce retention alerting for compaction anomalies",
   "agent": "cli",
+  "branch": "release/next",
+  "asOf": 1713432172000,
   "tokens": 702,
   "memoryHealth": {
     "projectId": "cortexta",
@@ -473,6 +578,207 @@ Notes:
   ],
   "cxf": "intent: introduce retention alerting for compaction anomalies\nscope: project + memory + retrieval",
   "envelope": "# Context\n- ...\n\n[CONTEXT_STATS]\ntokens=702 atoms=8 dropped=2\n\n[USER_QUERY]\nintroduce retention alerting for compaction anomalies"
+}
+```
+
+### POST `/cxlink/branch/list`
+
+**Request**
+```json
+{
+  "projectId": "cortexta"
+}
+```
+
+**Response**
+```json
+{
+  "ok": true,
+  "route": "cxlink/branch/list",
+  "projectId": "cortexta",
+  "branches": [
+    {
+      "id": "mem_branch_42f8f3d7f10f97d4ef9f8191",
+      "projectId": "cortexta",
+      "branch": "main",
+      "createdAt": 1713430000000,
+      "updatedAt": 1713433000000
+    },
+    {
+      "id": "mem_branch_117d2de0e6a99f1cbf9bc3ba",
+      "projectId": "cortexta",
+      "branch": "feature/auth-refactor",
+      "parentBranch": "main",
+      "forkedFromCommit": "commit-main-001",
+      "createdAt": 1713432000000,
+      "updatedAt": 1713433000000
+    }
+  ]
+}
+```
+
+### POST `/cxlink/branch/create`
+
+**Request**
+```json
+{
+  "projectId": "cortexta",
+  "branch": "release/next",
+  "fromBranch": "feature/auth-refactor",
+  "forkedFromCommit": "commit-feature-012"
+}
+```
+
+**Response**
+```json
+{
+  "ok": true,
+  "route": "cxlink/branch/create",
+  "created": {
+    "id": "mem_branch_8113968d6c1ded8f42fe5fb1",
+    "projectId": "cortexta",
+    "branch": "release/next",
+    "parentBranch": "feature/auth-refactor",
+    "forkedFromCommit": "commit-feature-012",
+    "createdAt": 1713433200000,
+    "updatedAt": 1713433200000
+  }
+}
+```
+
+### POST `/cxlink/branch/merge`
+
+**Request**
+```json
+{
+  "projectId": "cortexta",
+  "sourceBranch": "feature/auth-refactor",
+  "targetBranch": "release/next",
+  "strategy": "source-wins"
+}
+```
+
+**Response**
+```json
+{
+  "ok": true,
+  "route": "cxlink/branch/merge",
+  "result": {
+    "projectId": "cortexta",
+    "sourceBranch": "feature/auth-refactor",
+    "targetBranch": "release/next",
+    "strategy": "source-wins",
+    "mergedRows": 7,
+    "appliedUpserts": 5,
+    "appliedDeletes": 1,
+    "skipped": 1,
+    "completedAt": 1713433500000
+  }
+}
+```
+
+### POST `/cxlink/branch/switch`
+
+**Request**
+```json
+{
+  "projectId": "cortexta",
+  "fromBranch": "release/next",
+  "toBranch": "ops/hotfix",
+  "reason": "incident-response"
+}
+```
+
+**Response**
+```json
+{
+  "ok": true,
+  "route": "cxlink/branch/switch",
+  "switched": {
+    "projectId": "cortexta",
+    "fromBranch": "release/next",
+    "toBranch": "ops/hotfix",
+    "reason": "incident-response"
+  },
+  "streamEvent": {
+    "payload": {
+      "eventType": "branchSwitched"
+    }
+  }
+}
+```
+
+### POST `/cxlink/temporal/query`
+
+**Request**
+```json
+{
+  "query": "auth guard",
+  "projectId": "cortexta",
+  "branch": "feature/auth-refactor",
+  "asOf": 1713432800000,
+  "topK": 8,
+  "minScore": 0.4
+}
+```
+
+**Response**
+```json
+{
+  "ok": true,
+  "route": "cxlink/temporal/query",
+  "query": "auth guard",
+  "projectId": "cortexta",
+  "branch": "feature/auth-refactor",
+  "asOf": 1713432800000,
+  "count": 1,
+  "results": [
+    {
+      "logicalId": "memory.feature.auth.guard",
+      "title": "Auth guard feature branch",
+      "score": 0.913,
+      "branch": "feature/auth-refactor"
+    }
+  ]
+}
+```
+
+### POST `/cxlink/temporal/diff`
+
+**Request**
+```json
+{
+  "projectId": "cortexta",
+  "branch": "feature/auth-refactor",
+  "from": 1713432000000,
+  "to": 1713434000000,
+  "limit": 50
+}
+```
+
+**Response**
+```json
+{
+  "ok": true,
+  "route": "cxlink/temporal/diff",
+  "diff": {
+    "projectId": "cortexta",
+    "branch": "feature/auth-refactor",
+    "from": 1713432000000,
+    "to": 1713434000000,
+    "totals": {
+      "added": 1,
+      "removed": 1,
+      "modified": 2
+    },
+    "items": [
+      {
+        "logicalId": "memory.feature.auth.guard",
+        "changeType": "modified",
+        "title": "Auth guard feature branch"
+      }
+    ]
+  }
 }
 ```
 

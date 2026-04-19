@@ -28,8 +28,10 @@ const TOOL_DEFINITIONS: CortexaMcpToolDefinition[] = [
             properties: {
                 query: { type: "string", minLength: 1, maxLength: 16384 },
                 projectId: { type: "string", maxLength: 256 },
+                branch: { type: "string", maxLength: 128 },
                 topK: { type: "integer", minimum: 1, maximum: 50 },
-                minScore: { type: "number", minimum: 0, maximum: 1 }
+                minScore: { type: "number", minimum: 0, maximum: 1 },
+                asOf: { type: "integer", minimum: 0, maximum: 32503680000000 }
             },
             required: ["query"],
             additionalProperties: false
@@ -44,8 +46,10 @@ const TOOL_DEFINITIONS: CortexaMcpToolDefinition[] = [
             properties: {
                 query: { type: "string", minLength: 1, maxLength: 16384 },
                 projectId: { type: "string", maxLength: 256 },
+                branch: { type: "string", maxLength: 128 },
                 topK: { type: "integer", minimum: 1, maximum: 50 },
                 minScore: { type: "number", minimum: 0, maximum: 1 },
+                asOf: { type: "integer", minimum: 0, maximum: 32503680000000 },
                 agent: { type: "string", maxLength: 256 }
             },
             required: ["query"],
@@ -61,14 +65,131 @@ const TOOL_DEFINITIONS: CortexaMcpToolDefinition[] = [
             properties: {
                 query: { type: "string", minLength: 1, maxLength: 16384 },
                 projectId: { type: "string", maxLength: 256 },
+                branch: { type: "string", maxLength: 128 },
                 topK: { type: "integer", minimum: 1, maximum: 50 },
                 minScore: { type: "number", minimum: 0, maximum: 1 },
+                asOf: { type: "integer", minimum: 0, maximum: 32503680000000 },
                 agent: { type: "string", maxLength: 256 }
             },
             required: ["query"],
             additionalProperties: false
         },
         mutation: false
+    },
+    {
+        name: "cortexa_context_suggest",
+        description: "Generate intent-aware proactive context suggestions and optional warmed context payload.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                query: { type: "string", minLength: 1, maxLength: 16384 },
+                projectId: { type: "string", maxLength: 256 },
+                branch: { type: "string", maxLength: 128 },
+                asOf: { type: "integer", minimum: 0, maximum: 32503680000000 },
+                warmup: { type: "boolean" },
+                topK: { type: "integer", minimum: 1, maximum: 100 },
+                maxTokens: { type: "integer", minimum: 128, maximum: 32768 }
+            },
+            required: ["query"],
+            additionalProperties: false
+        },
+        mutation: false
+    },
+    {
+        name: "cortexa_temporal_query",
+        description: "Run memory retrieval at a historical timestamp (time-travel query).",
+        inputSchema: {
+            type: "object",
+            properties: {
+                query: { type: "string", minLength: 1, maxLength: 16384 },
+                projectId: { type: "string", minLength: 1, maxLength: 256 },
+                branch: { type: "string", maxLength: 128 },
+                asOf: { type: "integer", minimum: 0, maximum: 32503680000000 },
+                topK: { type: "integer", minimum: 1, maximum: 50 },
+                minScore: { type: "number", minimum: 0, maximum: 1 }
+            },
+            required: ["query", "projectId", "asOf"],
+            additionalProperties: false
+        },
+        mutation: false
+    },
+    {
+        name: "cortexa_temporal_diff",
+        description: "Return memory delta between two timestamps for a project/branch.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                projectId: { type: "string", minLength: 1, maxLength: 256 },
+                branch: { type: "string", maxLength: 128 },
+                from: { type: "integer", minimum: 0, maximum: 32503680000000 },
+                to: { type: "integer", minimum: 0, maximum: 32503680000000 },
+                limit: { type: "integer", minimum: 1, maximum: 2000 }
+            },
+            required: ["projectId", "from", "to"],
+            additionalProperties: false
+        },
+        mutation: false
+    },
+    {
+        name: "cortexa_branch_list",
+        description: "List available memory branches for a project.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                projectId: { type: "string", minLength: 1, maxLength: 256 }
+            },
+            required: ["projectId"],
+            additionalProperties: false
+        },
+        mutation: false
+    },
+    {
+        name: "cortexa_branch_create",
+        description: "Create a memory branch from a parent branch.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                projectId: { type: "string", minLength: 1, maxLength: 256 },
+                branch: { type: "string", minLength: 1, maxLength: 128 },
+                fromBranch: { type: "string", maxLength: 128 },
+                forkedFromCommit: { type: "string", maxLength: 256 }
+            },
+            required: ["projectId", "branch"],
+            additionalProperties: false
+        },
+        mutation: true
+    },
+    {
+        name: "cortexa_branch_merge",
+        description: "Merge source branch changes into target branch.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                projectId: { type: "string", minLength: 1, maxLength: 256 },
+                sourceBranch: { type: "string", minLength: 1, maxLength: 128 },
+                targetBranch: { type: "string", minLength: 1, maxLength: 128 },
+                strategy: { type: "string", enum: ["source-wins", "target-wins"] }
+            },
+            required: ["projectId", "sourceBranch", "targetBranch"],
+            additionalProperties: false
+        },
+        mutation: true
+    },
+    {
+        name: "cortexa_branch_switch",
+        description: "Switch active branch context (emits branch switch stream event).",
+        inputSchema: {
+            type: "object",
+            properties: {
+                projectId: { type: "string", minLength: 1, maxLength: 256 },
+                fromBranch: { type: "string", maxLength: 128 },
+                toBranch: { type: "string", minLength: 1, maxLength: 128 },
+                reason: { type: "string", maxLength: 512 }
+            },
+            required: ["projectId", "toBranch"],
+            additionalProperties: false
+        },
+        mutation: true
     },
     {
         name: "cortexa_compaction_stats",
@@ -124,6 +245,7 @@ const TOOL_DEFINITIONS: CortexaMcpToolDefinition[] = [
             properties: {
                 path: { type: "string", minLength: 1, maxLength: 4096 },
                 projectId: { type: "string", maxLength: 256 },
+                branch: { type: "string", maxLength: 128 },
                 includeChats: { type: "boolean" },
                 skipUnchanged: { type: "boolean" },
                 maxFiles: { type: "integer", minimum: 0, maximum: 200000 },

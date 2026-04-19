@@ -10,6 +10,9 @@ It standardizes how query intent, retrieved memory evidence, constraints, and to
 - bounded context budgets with predictable token accounting
 - stable payloads for retrieval, planning, and execution clients
 - explicit health signaling for memory quality-aware orchestration
+- branch-aware context isolation with deterministic lineage fallback
+- temporal (as-of) memory reconstruction and change introspection
+- proactive intent hints for pre-tuned retrieval envelopes
 
 ## Core concepts
 
@@ -53,6 +56,35 @@ CX-LINK routes include `memoryHealth` to expose runtime memory posture:
 
 This allows orchestrators to adapt behavior (e.g., run audit/backfill before high-stakes tasks).
 
+### 4) Branch-aware context scope
+
+CX-LINK supports explicit memory branch scoping via `branch`:
+
+- default branch: `main`
+- custom branches inherit context through parent lineage
+- branch-local writes are copy-on-write overlays
+- branch tombstones mask inherited memories when deleted in child branches
+
+This enables safe experimentation and task-specific memory contexts without mutating `main`.
+
+### 5) Temporal retrieval (`asOf`) and diff
+
+Temporal access is modeled through `asOf` timestamps and diff windows:
+
+- retrieval routes can resolve memory state at a historical timestamp (`asOf`)
+- temporal query endpoint returns ranked results from reconstructed historical state
+- temporal diff endpoint returns added/removed/modified memory deltas between two timestamps
+
+This provides time-travel context replay and branch timeline diagnostics.
+
+### 6) Proactive intent suggestions
+
+Daemon query/context flows can return proactive intent suggestions with tuned retrieval controls:
+
+- inferred intent category + confidence
+- recommended `topK`, `maxTokens`, `scope`, and `constraints`
+- optional daemon stream events for suggestion and branch-switch notifications
+
 ## Route surface
 
 CX-LINK HTTP routes:
@@ -60,10 +92,17 @@ CX-LINK HTTP routes:
 - `POST /cxlink/context` → context rendering + CxF + envelope
 - `POST /cxlink/query` → ranked memory results + CxF + envelope
 - `POST /cxlink/plan` → actionable plan steps + CxF + envelope
+- `POST /cxlink/branch/list` → list project memory branches
+- `POST /cxlink/branch/create` → create branch from parent branch
+- `POST /cxlink/branch/merge` → merge source branch changes into target branch
+- `POST /cxlink/branch/switch` → emit branch context switch event
+- `POST /cxlink/temporal/query` → ranked retrieval at historical timestamp (`asOf` required)
+- `POST /cxlink/temporal/diff` → timeline delta between `from` and `to`
 
 ## Contract notes
 
 - CX-LINK is transport-agnostic (works over CLI, HTTP, and MCP adapters).
+- `branch` and `asOf` are additive context controls supported on core retrieval routes.
 - Payload contracts are additive-first; avoid removing existing fields in minor releases.
 - When changing envelope shape, update:
   - `docs/api-examples.md`

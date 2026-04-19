@@ -43,6 +43,10 @@ Read-only tools:
 - `cortexa_query`
 - `cortexa_context`
 - `cortexa_plan`
+- `cortexa_context_suggest`
+- `cortexa_temporal_query`
+- `cortexa_temporal_diff`
+- `cortexa_branch_list`
 - `cortexa_compaction_stats`
 - `cortexa_compaction_dashboard`
 - `cortexa_self_heal_status`
@@ -53,11 +57,22 @@ Mutation tools (disabled by default):
 
 - `cortexa_ingest`
 - `cortexa_evolve`
+- `cortexa_branch_create`
+- `cortexa_branch_merge`
+- `cortexa_branch_switch`
 - `cortexa_self_heal_trigger`
 
 Enable mutations with:
 
 - `CORTEXA_MCP_ENABLE_MUTATIONS=true`
+
+### Parameter highlights
+
+- `cortexa_query`, `cortexa_context`, and `cortexa_plan` accept `branch` and `asOf` for branch-aware + temporal retrieval.
+- `cortexa_ingest` accepts `branch` to ingest into non-`main` memory branches.
+- `cortexa_context_suggest` supports `warmup`, `topK`, and `maxTokens` for proactive pre-compilation.
+- `cortexa_temporal_query` requires `query`, `projectId`, and `asOf`.
+- `cortexa_temporal_diff` requires `projectId`, `from`, and `to`.
 
 ---
 

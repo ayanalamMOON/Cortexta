@@ -40,10 +40,16 @@ export function parseTags(raw: unknown): string[] {
 
 export function createMemory(input: CreateMemoryInput): MemoryRecord {
     const now = Date.now();
+    const branch = (input.branch ?? "main").trim() || "main";
+    const logicalId = (input.logicalId ?? input.id)?.trim() || randomId();
 
     return {
-        id: input.id ?? randomId(),
+        id: input.id ?? logicalId,
+        logicalId,
         projectId: input.projectId ?? "default",
+        branch,
+        parentBranch: input.parentBranch,
+        forkedFromCommit: input.forkedFromCommit,
         kind: input.kind,
         sourceType: input.sourceType ?? "manual",
         title: input.title.trim(),

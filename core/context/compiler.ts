@@ -6,8 +6,10 @@ import { estimateTokens, packContextParts } from "./packer";
 
 export interface CompileContextOptions {
     projectId?: string;
+    branch?: string;
     maxTokens?: number;
     topK?: number;
+    asOf?: number;
     constraints?: string[];
     scope?: string;
 }
@@ -30,8 +32,10 @@ export async function compileContext(
 
     const retrieved = await retrieveTopK(query, {
         projectId: options.projectId,
+        branch: options.branch,
         topK,
-        minScore: 0
+        minScore: 0,
+        asOf: options.asOf
     });
 
     const condensed = retrieved.map((memory) => ({

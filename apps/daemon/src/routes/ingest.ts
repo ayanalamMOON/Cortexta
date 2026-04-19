@@ -8,6 +8,7 @@ ingestRouter.post("/", async (req: any, res: any) => {
     const body = toRecord(req.body);
     const projectPath = toTrimmedString(body.path, 4096);
     const projectId = toTrimmedString(body.projectId, 256);
+    const branch = toTrimmedString(body.branch, 128);
     const includeChats = toBoolean(body.includeChats, false);
     const skipUnchanged = toBoolean(body.skipUnchanged, true);
     const maxFiles = toBoundedInt(body.maxFiles, 0, 200_000);
@@ -23,6 +24,7 @@ ingestRouter.post("/", async (req: any, res: any) => {
         const result = await runIngestion({
             projectPath,
             projectId,
+            branch,
             includeChats,
             skipUnchanged,
             maxFiles,

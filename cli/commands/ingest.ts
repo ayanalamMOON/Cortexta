@@ -20,6 +20,7 @@ function normalizeOptionalInt(value: number | undefined, min: number, max: numbe
 export async function ingestCommand(projectPath: string, cliArgs: string[] = []): Promise<void> {
     const parsed = parseCliArgs(cliArgs);
     const projectId = readStringOption(parsed, ["project-id", "projectId"]);
+    const branch = readStringOption(parsed, ["branch"]);
     const chatRoot = readStringOption(parsed, ["chat-root", "chatRoot"]);
     const maxFiles = normalizeOptionalInt(readNumberOption(parsed, ["max-files", "maxFiles"]), 0, 200_000);
     const maxChatFiles = normalizeOptionalInt(
@@ -38,6 +39,7 @@ export async function ingestCommand(projectPath: string, cliArgs: string[] = [])
     const result = await runIngestion({
         projectPath,
         projectId,
+        branch,
         includeChats,
         skipUnchanged,
         maxFiles,
@@ -48,6 +50,7 @@ export async function ingestCommand(projectPath: string, cliArgs: string[] = [])
     logger.info("Ingestion finished", {
         projectPath,
         projectId: projectId ?? "auto",
+        branch: branch ?? "main",
         includeChats,
         skipUnchanged,
         filesScanned: result.filesScanned,

@@ -128,8 +128,10 @@ export async function executeCortexaTool(params: ExecuteToolParams): Promise<Mcp
                 const payload = await params.daemonClient.postJson("/cxlink/query", compactBody({
                     query,
                     projectId: toTrimmedString(args.projectId, 256),
+                    branch: toTrimmedString(args.branch, 128),
                     topK: toBoundedInt(args.topK, 1, 50),
                     minScore: toBoundedNumber(args.minScore, 0, 1),
+                    asOf: toBoundedInt(args.asOf, 0, 32_503_680_000_000),
                     agent: toTrimmedString(args.agent, 256)
                 }));
 
@@ -145,8 +147,10 @@ export async function executeCortexaTool(params: ExecuteToolParams): Promise<Mcp
                 const payload = await params.daemonClient.postJson("/cxlink/context", compactBody({
                     query,
                     projectId: toTrimmedString(args.projectId, 256),
+                    branch: toTrimmedString(args.branch, 128),
                     topK: toBoundedInt(args.topK, 1, 50),
                     minScore: toBoundedNumber(args.minScore, 0, 1),
+                    asOf: toBoundedInt(args.asOf, 0, 32_503_680_000_000),
                     agent: toTrimmedString(args.agent, 256)
                 }));
 
@@ -162,9 +166,135 @@ export async function executeCortexaTool(params: ExecuteToolParams): Promise<Mcp
                 const payload = await params.daemonClient.postJson("/cxlink/plan", compactBody({
                     query,
                     projectId: toTrimmedString(args.projectId, 256),
+                    branch: toTrimmedString(args.branch, 128),
                     topK: toBoundedInt(args.topK, 1, 50),
                     minScore: toBoundedNumber(args.minScore, 0, 1),
+                    asOf: toBoundedInt(args.asOf, 0, 32_503_680_000_000),
                     agent: toTrimmedString(args.agent, 256)
+                }));
+
+                return successResult(payload);
+            }
+
+            case "cortexa_context_suggest": {
+                const query = requiredString(args, "query", 16_384);
+                if (!query) {
+                    return errorResult("Missing required field: query");
+                }
+
+                const payload = await params.daemonClient.postJson("/context/suggest", compactBody({
+                    query,
+                    projectId: toTrimmedString(args.projectId, 256),
+                    branch: toTrimmedString(args.branch, 128),
+                    asOf: toBoundedInt(args.asOf, 0, 32_503_680_000_000),
+                    warmup: toBoolean(args.warmup, false),
+                    topK: toBoundedInt(args.topK, 1, 100),
+                    maxTokens: toBoundedInt(args.maxTokens, 128, 32_768)
+                }));
+
+                return successResult(payload);
+            }
+
+            case "cortexa_temporal_query": {
+                const query = requiredString(args, "query", 16_384);
+                const projectId = requiredString(args, "projectId", 256);
+                const asOf = toBoundedInt(args.asOf, 0, 32_503_680_000_000);
+
+                if (!query || !projectId || !Number.isFinite(asOf)) {
+                    return errorResult("Missing required fields: query, projectId, asOf");
+                }
+
+                const payload = await params.daemonClient.postJson("/cxlink/temporal/query", compactBody({
+                    query,
+                    projectId,
+                    branch: toTrimmedString(args.branch, 128),
+                    asOf,
+                    topK: toBoundedInt(args.topK, 1, 50),
+                    minScore: toBoundedNumber(args.minScore, 0, 1)
+                }));
+
+                return successResult(payload);
+            }
+
+            case "cortexa_temporal_diff": {
+                const projectId = requiredString(args, "projectId", 256);
+                const from = toBoundedInt(args.from, 0, 32_503_680_000_000);
+                const to = toBoundedInt(args.to, 0, 32_503_680_000_000);
+                if (!projectId || !Number.isFinite(from) || !Number.isFinite(to)) {
+                    return errorResult("Missing required fields: projectId, from, to");
+                }
+
+                const payload = await params.daemonClient.postJson("/cxlink/temporal/diff", compactBody({
+                    projectId,
+                    branch: toTrimmedString(args.branch, 128),
+                    from,
+                    to,
+                    limit: toBoundedInt(args.limit, 1, 2000)
+                }));
+
+                return successResult(payload);
+            }
+
+            case "cortexa_branch_list": {
+                const projectId = requiredString(args, "projectId", 256);
+                if (!projectId) {
+                    return errorResult("Missing required field: projectId");
+                }
+
+                const payload = await params.daemonClient.postJson("/cxlink/branch/list", {
+                    projectId
+                });
+
+                return successResult(payload);
+            }
+
+            case "cortexa_branch_create": {
+                const projectId = requiredString(args, "projectId", 256);
+                const branch = requiredString(args, "branch", 128);
+                if (!projectId || !branch) {
+                    return errorResult("Missing required fields: projectId, branch");
+                }
+
+                const payload = await params.daemonClient.postJson("/cxlink/branch/create", compactBody({
+                    projectId,
+                    branch,
+                    fromBranch: toTrimmedString(args.fromBranch, 128),
+                    forkedFromCommit: toTrimmedString(args.forkedFromCommit, 256)
+                }));
+
+                return successResult(payload);
+            }
+
+            case "cortexa_branch_merge": {
+                const projectId = requiredString(args, "projectId", 256);
+                const sourceBranch = requiredString(args, "sourceBranch", 128);
+                const targetBranch = requiredString(args, "targetBranch", 128);
+                if (!projectId || !sourceBranch || !targetBranch) {
+                    return errorResult("Missing required fields: projectId, sourceBranch, targetBranch");
+                }
+
+                const payload = await params.daemonClient.postJson("/cxlink/branch/merge", compactBody({
+                    projectId,
+                    sourceBranch,
+                    targetBranch,
+                    strategy: toTrimmedString(args.strategy, 32)
+                }));
+
+                return successResult(payload);
+            }
+
+            case "cortexa_branch_switch": {
+                const projectId = requiredString(args, "projectId", 256);
+                const toBranch = requiredString(args, "toBranch", 128);
+                if (!projectId || !toBranch) {
+                    return errorResult("Missing required fields: projectId, toBranch");
+                }
+
+                const payload = await params.daemonClient.postJson("/cxlink/branch/switch", compactBody({
+                    projectId,
+                    fromBranch: toTrimmedString(args.fromBranch, 128),
+                    toBranch,
+                    reason: toTrimmedString(args.reason, 512)
                 }));
 
                 return successResult(payload);
@@ -211,6 +341,7 @@ export async function executeCortexaTool(params: ExecuteToolParams): Promise<Mcp
                 const payload = await params.daemonClient.postJson("/ingest", compactBody({
                     path: projectPath,
                     projectId: toTrimmedString(args.projectId, 256),
+                    branch: toTrimmedString(args.branch, 128),
                     includeChats: toBoolean(args.includeChats, false),
                     skipUnchanged: toBoolean(args.skipUnchanged, true),
                     maxFiles: toBoundedInt(args.maxFiles, 0, 200_000),

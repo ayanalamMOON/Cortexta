@@ -8,9 +8,15 @@ export type MemoryKind =
 
 export type MemorySourceType = "code" | "chat" | "manual" | "system";
 
+export type MemoryBranchName = string;
+
 export interface MemoryRecord {
     id: string;
+    logicalId?: string;
     projectId: string;
+    branch?: MemoryBranchName;
+    parentBranch?: MemoryBranchName;
+    forkedFromCommit?: string;
     kind: MemoryKind;
     sourceType: MemorySourceType;
     title: string;
@@ -29,7 +35,11 @@ export interface MemoryRecord {
 
 export interface CreateMemoryInput {
     id?: string;
+    logicalId?: string;
     projectId?: string;
+    branch?: MemoryBranchName;
+    parentBranch?: MemoryBranchName;
+    forkedFromCommit?: string;
     kind: MemoryKind;
     sourceType?: MemorySourceType;
     title: string;
@@ -45,8 +55,90 @@ export interface CreateMemoryInput {
 
 export interface MemorySearchOptions {
     projectId?: string;
+    branch?: MemoryBranchName;
     topK?: number;
     minScore?: number;
+    asOf?: number;
+}
+
+export interface MemoryBranchRecord {
+    id: string;
+    projectId: string;
+    branch: MemoryBranchName;
+    parentBranch?: MemoryBranchName;
+    forkedFromCommit?: string;
+    createdAt: number;
+    updatedAt: number;
+}
+
+export interface CreateMemoryBranchInput {
+    projectId: string;
+    branch: MemoryBranchName;
+    fromBranch?: MemoryBranchName;
+    forkedFromCommit?: string;
+}
+
+export interface MergeMemoryBranchInput {
+    projectId: string;
+    sourceBranch: MemoryBranchName;
+    targetBranch: MemoryBranchName;
+    strategy?: "source-wins" | "target-wins";
+}
+
+export interface MergeMemoryBranchResult {
+    projectId: string;
+    sourceBranch: MemoryBranchName;
+    targetBranch: MemoryBranchName;
+    strategy: "source-wins" | "target-wins";
+    mergedRows: number;
+    appliedUpserts: number;
+    appliedDeletes: number;
+    skipped: number;
+    completedAt: number;
+}
+
+export interface MemoryTemporalDiffItem {
+    logicalId: string;
+    kind: MemoryKind;
+    sourceType: MemorySourceType;
+    title: string;
+    branch: MemoryBranchName;
+    before?: {
+        summary: string;
+        content: string;
+        sourceRef?: string;
+        confidence: number;
+        importance: number;
+    };
+    after?: {
+        summary: string;
+        content: string;
+        sourceRef?: string;
+        confidence: number;
+        importance: number;
+    };
+    changeType: "added" | "removed" | "modified";
+}
+
+export interface MemoryTemporalDiffOptions {
+    projectId: string;
+    branch?: MemoryBranchName;
+    from: number;
+    to: number;
+    limit?: number;
+}
+
+export interface MemoryTemporalDiffResult {
+    projectId: string;
+    branch: MemoryBranchName;
+    from: number;
+    to: number;
+    totals: {
+        added: number;
+        removed: number;
+        modified: number;
+    };
+    items: MemoryTemporalDiffItem[];
 }
 
 export interface MemoryCompactionStats {

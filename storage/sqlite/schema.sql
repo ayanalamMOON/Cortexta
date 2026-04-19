@@ -116,6 +116,70 @@ CREATE TABLE IF NOT EXISTS self_healing_run_history (
   createdAt INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS memory_branches (
+  id TEXT PRIMARY KEY,
+  projectId TEXT NOT NULL,
+  branch TEXT NOT NULL,
+  parentBranch TEXT,
+  forkedFromCommit TEXT,
+  createdAt INTEGER NOT NULL,
+  updatedAt INTEGER NOT NULL,
+  UNIQUE(projectId, branch)
+);
+
+CREATE TABLE IF NOT EXISTS memory_branch_memories (
+  id TEXT PRIMARY KEY,
+  logicalId TEXT NOT NULL,
+  projectId TEXT,
+  branch TEXT NOT NULL,
+  kind TEXT,
+  sourceType TEXT,
+  title TEXT,
+  summary TEXT,
+  content TEXT,
+  tags TEXT,
+  importance REAL,
+  confidence REAL,
+  createdAt INTEGER,
+  lastAccessedAt INTEGER,
+  embeddingRef TEXT,
+  sourceRef TEXT
+);
+
+CREATE TABLE IF NOT EXISTS memory_branch_tombstones (
+  id TEXT PRIMARY KEY,
+  logicalId TEXT NOT NULL,
+  projectId TEXT NOT NULL,
+  branch TEXT NOT NULL,
+  createdAt INTEGER NOT NULL,
+  UNIQUE(projectId, branch, logicalId)
+);
+
+CREATE TABLE IF NOT EXISTS memory_snapshots (
+  id TEXT PRIMARY KEY,
+  logicalId TEXT NOT NULL,
+  storageId TEXT,
+  projectId TEXT,
+  branch TEXT NOT NULL,
+  parentBranch TEXT,
+  forkedFromCommit TEXT,
+  operation TEXT NOT NULL,
+  kind TEXT,
+  sourceType TEXT,
+  title TEXT,
+  summary TEXT,
+  content TEXT,
+  tags TEXT,
+  importance REAL,
+  confidence REAL,
+  lastAccessedAt INTEGER,
+  embeddingRef TEXT,
+  sourceRef TEXT,
+  validFrom INTEGER NOT NULL,
+  validUntil INTEGER,
+  createdAt INTEGER NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_memories_project ON memories(projectId);
 CREATE INDEX IF NOT EXISTS idx_memories_kind ON memories(kind);
 CREATE INDEX IF NOT EXISTS idx_memories_last_accessed ON memories(lastAccessedAt);
@@ -130,3 +194,13 @@ CREATE INDEX IF NOT EXISTS idx_ingestion_sources_project_type ON memory_ingestio
 CREATE INDEX IF NOT EXISTS idx_ingestion_sources_project_ref ON memory_ingestion_sources(projectId, sourceType, sourceRef);
 CREATE INDEX IF NOT EXISTS idx_self_healing_history_scope_started ON self_healing_run_history(schedulerScope, startedAt DESC);
 CREATE INDEX IF NOT EXISTS idx_self_healing_history_scope_outcome_started ON self_healing_run_history(schedulerScope, outcome, startedAt DESC);
+CREATE INDEX IF NOT EXISTS idx_memory_branches_project_branch ON memory_branches(projectId, branch);
+CREATE INDEX IF NOT EXISTS idx_memory_branches_project_parent ON memory_branches(projectId, parentBranch);
+CREATE INDEX IF NOT EXISTS idx_branch_memories_project_branch_last_accessed ON memory_branch_memories(projectId, branch, lastAccessedAt DESC);
+CREATE INDEX IF NOT EXISTS idx_branch_memories_project_branch_logical ON memory_branch_memories(projectId, branch, logicalId);
+CREATE INDEX IF NOT EXISTS idx_branch_memories_project_source_ref ON memory_branch_memories(projectId, sourceRef);
+CREATE INDEX IF NOT EXISTS idx_branch_tombstones_project_branch ON memory_branch_tombstones(projectId, branch);
+CREATE INDEX IF NOT EXISTS idx_branch_tombstones_project_branch_logical ON memory_branch_tombstones(projectId, branch, logicalId);
+CREATE INDEX IF NOT EXISTS idx_memory_snapshots_scope_validity ON memory_snapshots(projectId, branch, validFrom, validUntil);
+CREATE INDEX IF NOT EXISTS idx_memory_snapshots_scope_logical ON memory_snapshots(projectId, branch, logicalId, validFrom DESC);
+CREATE INDEX IF NOT EXISTS idx_memory_snapshots_operation ON memory_snapshots(operation, createdAt DESC);

@@ -9,6 +9,7 @@ import { parseCopilotSession } from "./copilot.parser";
 export interface IngestInput {
     projectPath: string;
     projectId?: string;
+    branch?: string;
     includeChats?: boolean;
     maxChunkChars?: number;
     maxFiles?: number;
@@ -55,6 +56,7 @@ const DEFAULT_MAX_FILE_BYTES = 768 * 1024;
 const DEFAULT_MAX_CHAT_FILES = 400;
 const DEFAULT_SKIP_UNCHANGED = true;
 const INGEST_VERSION = "ingest-v2";
+const MAIN_BRANCH = "main";
 
 type IngestionSourceType = "code" | "chat";
 type IngestionMemoryKind = "code_entity" | "chat_turn";
@@ -107,6 +109,19 @@ function contentHash(text: string): string {
 
 function sourceFingerprintId(projectId: string, sourceType: IngestionSourceType, sourceRef: string): string {
     return stableId("ingest_source", [projectId, sourceType, sourceRef]);
+}
+
+function normalizeBranchName(value: unknown): string {
+    const normalized = typeof value === "string" ? value.trim() : "";
+    return normalized || MAIN_BRANCH;
+}
+
+function toFingerprintSourceRef(sourceRef: string, branch: string): string {
+    if (branch === MAIN_BRANCH) {
+        return sourceRef;
+    }
+
+    return `branch:${branch}:${sourceRef}`;
 }
 
 function getSourceFingerprint(
@@ -191,27 +206,45 @@ function shouldSkipUnchangedSource(params: {
 
 function listExistingSourceMemoryIds(
     projectId: string,
+    branch: string,
     sourceRef: string,
     kind: IngestionMemoryKind
 ): string[] {
-    const rows = db
-        .prepare(
-            `
-            SELECT id
-            FROM memories
-            WHERE projectId = ?
-              AND sourceRef = ?
-              AND kind = ?
-          `
-        )
-        .all<Record<string, unknown>>(projectId, sourceRef, kind);
+    const rows = branch === MAIN_BRANCH
+        ? db
+            .prepare(
+                `
+                SELECT id
+                FROM memories
+                WHERE projectId = ?
+                  AND sourceRef = ?
+                  AND kind = ?
+              `
+            )
+            .all<Record<string, unknown>>(projectId, sourceRef, kind)
+        : db
+            .prepare(
+                `
+                SELECT id
+                FROM memory_branch_memories
+                WHERE projectId = ?
+                  AND branch = ?
+                  AND sourceRef = ?
+                  AND kind = ?
+              `
+            )
+            .all<Record<string, unknown>>(projectId, branch, sourceRef, kind);
 
     return rows.map((row) => String(row.id ?? "")).filter(Boolean);
 }
 
 async function removeStaleSourceMemories(
     existingIds: string[],
-    currentIds: Set<string>
+    currentIds: Set<string>,
+    scope: {
+        projectId: string;
+        branch: string;
+    }
 ): Promise<number> {
     if (existingIds.length === 0) {
         return 0;
@@ -222,7 +255,10 @@ async function removeStaleSourceMemories(
         return 0;
     }
 
-    return deleteMemoriesByIds(staleIds);
+    return deleteMemoriesByIds(staleIds, {
+        projectId: scope.projectId,
+        branch: scope.branch
+    });
 }
 
 function splitByMaxChars(content: string, maxChars: number): string[] {
@@ -424,6 +460,7 @@ export async function runIngestion(input: IngestInput): Promise<IngestionResult>
     }
 
     const projectId = input.projectId ?? (path.basename(projectPath) || "default");
+    const branch = normalizeBranchName(input.branch);
     const maxChunkChars = toPositiveInteger(input.maxChunkChars) ?? DEFAULT_MAX_CHUNK_CHARS;
     const maxFiles = toNonNegativeInteger(input.maxFiles) ?? Number.POSITIVE_INFINITY;
     const maxFileBytes = toPositiveInteger(readEnv("CORTEXA_INGEST_MAX_FILE_BYTES")) ?? DEFAULT_MAX_FILE_BYTES;
@@ -459,6 +496,7 @@ export async function runIngestion(input: IngestInput): Promise<IngestionResult>
 
             const source = fs.readFileSync(filePath, "utf8");
             const sourceRef = toSourceRef(projectPath, filePath);
+            const fingerprintSourceRef = toFingerprintSourceRef(sourceRef, branch);
             const sourceContentHash = contentHash([
                 INGEST_VERSION,
                 "code",
@@ -471,7 +509,7 @@ export async function runIngestion(input: IngestInput): Promise<IngestionResult>
                 shouldSkipUnchangedSource({
                     projectId,
                     sourceType: "code",
-                    sourceRef,
+                    sourceRef: fingerprintSourceRef,
                     sourceContentHash,
                     ingestVersion: INGEST_VERSION
                 })
@@ -481,7 +519,7 @@ export async function runIngestion(input: IngestInput): Promise<IngestionResult>
             }
 
             const parsed = parseCode(filePath, source);
-            const existingSourceMemoryIds = listExistingSourceMemoryIds(projectId, sourceRef, "code_entity");
+            const existingSourceMemoryIds = listExistingSourceMemoryIds(projectId, branch, sourceRef, "code_entity");
             const currentSourceMemoryIds = new Set<string>();
 
             for (let chunkIndex = 0; chunkIndex < parsed.chunks.length; chunkIndex += 1) {
@@ -513,6 +551,7 @@ export async function runIngestion(input: IngestInput): Promise<IngestionResult>
                     await upsertMemory({
                         id: memoryId,
                         projectId,
+                        branch,
                         kind: "code_entity",
                         sourceType: "code",
                         title: segmentedTitle,
@@ -529,14 +568,17 @@ export async function runIngestion(input: IngestInput): Promise<IngestionResult>
                 }
             }
 
-            const staleCodeRemoved = await removeStaleSourceMemories(existingSourceMemoryIds, currentSourceMemoryIds);
+            const staleCodeRemoved = await removeStaleSourceMemories(existingSourceMemoryIds, currentSourceMemoryIds, {
+                projectId,
+                branch
+            });
             result.staleCodeMemoriesRemoved += staleCodeRemoved;
             result.staleMemoriesRemoved += staleCodeRemoved;
 
             upsertSourceFingerprint({
                 projectId,
                 sourceType: "code",
-                sourceRef,
+                sourceRef: fingerprintSourceRef,
                 sourceContentHash,
                 contentBytes: Buffer.byteLength(source, "utf8"),
                 ingestVersion: INGEST_VERSION,
@@ -555,6 +597,7 @@ export async function runIngestion(input: IngestInput): Promise<IngestionResult>
             try {
                 const chatRawText = fs.readFileSync(chatFile, "utf8");
                 const sourceRef = toSourceRef(projectPath, chatFile);
+                const fingerprintSourceRef = toFingerprintSourceRef(sourceRef, branch);
                 const sourceContentHash = contentHash([
                     INGEST_VERSION,
                     "chat",
@@ -566,7 +609,7 @@ export async function runIngestion(input: IngestInput): Promise<IngestionResult>
                     shouldSkipUnchangedSource({
                         projectId,
                         sourceType: "chat",
-                        sourceRef,
+                        sourceRef: fingerprintSourceRef,
                         sourceContentHash,
                         ingestVersion: INGEST_VERSION
                     })
@@ -577,7 +620,7 @@ export async function runIngestion(input: IngestInput): Promise<IngestionResult>
 
                 const raw = readChatSessionFile(chatFile, chatRawText);
                 const turns = parseCopilotSession(raw);
-                const existingSourceMemoryIds = listExistingSourceMemoryIds(projectId, sourceRef, "chat_turn");
+                const existingSourceMemoryIds = listExistingSourceMemoryIds(projectId, branch, sourceRef, "chat_turn");
                 const currentSourceMemoryIds = new Set<string>();
 
                 for (let turnIndex = 0; turnIndex < turns.length; turnIndex += 1) {
@@ -601,6 +644,7 @@ export async function runIngestion(input: IngestInput): Promise<IngestionResult>
                     await upsertMemory({
                         id: memoryId,
                         projectId,
+                        branch,
                         kind: "chat_turn",
                         sourceType: "chat",
                         title: "Copilot Interaction",
@@ -616,14 +660,17 @@ export async function runIngestion(input: IngestInput): Promise<IngestionResult>
                     currentSourceMemoryIds.add(memoryId);
                 }
 
-                const staleChatRemoved = await removeStaleSourceMemories(existingSourceMemoryIds, currentSourceMemoryIds);
+                const staleChatRemoved = await removeStaleSourceMemories(existingSourceMemoryIds, currentSourceMemoryIds, {
+                    projectId,
+                    branch
+                });
                 result.staleChatMemoriesRemoved += staleChatRemoved;
                 result.staleMemoriesRemoved += staleChatRemoved;
 
                 upsertSourceFingerprint({
                     projectId,
                     sourceType: "chat",
-                    sourceRef,
+                    sourceRef: fingerprintSourceRef,
                     sourceContentHash,
                     contentBytes: Buffer.byteLength(chatRawText, "utf8"),
                     ingestVersion: INGEST_VERSION,

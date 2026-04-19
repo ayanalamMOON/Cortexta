@@ -3,12 +3,16 @@ import path from "node:path";
 import {
     auditMemoryResurrection,
     backfillMemoryCompaction,
+    createMemoryBranch,
     deleteMemory,
+    diffMemoriesBetween,
     getMemoryById,
     getMemoryCompactionDashboard,
     getMemoryCompactionOpportunities,
     getMemoryCompactionStats,
     listMemories,
+    listMemoryBranches,
+    mergeMemoryBranch,
     searchMemories
 } from "../../core/mempalace/memory.service";
 import { clampInteger, hasFlag, parseCliArgs, readNumberOption, readStringOption } from "../utils/args";
@@ -49,7 +53,7 @@ function summarizeContent(content: string, full: boolean): string {
 
 function printMemoryUsage(): void {
     logger.warn(
-        "Unknown memory action. Use: list [projectId] [--limit] | search <query> [--top-k] [--min-score] [--project-id] | get <id> [--full] | resurrect <id> [--full] | delete <id> | stats [--project-id] | opportunities [--project-id] [--limit] [--scan-limit] [--min-content-chars] [--json] | audit [--project-id] [--limit] [--max-issues] [--json] | backfill [--apply] [--project-id] [--limit] | dashboard [--json] [--project-id]"
+        "Unknown memory action. Use: list [projectId] [--limit] [--branch] [--as-of] | search <query> [--top-k] [--min-score] [--project-id] [--branch] [--as-of] | get <id> [--project-id] [--branch] [--as-of] [--full] | resurrect <id> [--project-id] [--branch] [--as-of] [--full] | delete <id> [--project-id] [--branch] | branch list [--project-id] | branch create <branch> [--project-id] [--from-branch] [--forked-from-commit] | branch merge <source> <target> [--project-id] [--strategy] | temporal diff [--project-id] [--branch] --from <ms> --to <ms> [--limit] | stats [--project-id] | opportunities [--project-id] [--limit] [--scan-limit] [--min-content-chars] [--json] | audit [--project-id] [--limit] [--max-issues] [--json] | backfill [--apply] [--project-id] [--limit] | dashboard [--json] [--project-id]"
     );
 }
 
@@ -60,13 +64,24 @@ export async function memoryCommand(action: string, cliArgs: string[] = []): Pro
     if (action === "list") {
         const positionalProjectId = positionals[0]?.trim() || undefined;
         const projectId = readStringOption(parsed, ["project-id", "projectId"]) ?? positionalProjectId;
+        const branch = readStringOption(parsed, ["branch"]);
+        const asOfRaw = readNumberOption(parsed, ["as-of", "asOf"]);
+        const asOf =
+            typeof asOfRaw === "number" && Number.isFinite(asOfRaw)
+                ? Math.max(0, Math.trunc(asOfRaw))
+                : undefined;
         const limit = clampInteger(readNumberOption(parsed, ["limit"]), 30, 1, 5_000);
 
-        const rows = listMemories(projectId, limit);
-        logger.info(`Listing ${rows.length} memories project=${projectId ?? "all"} limit=${limit}`);
+        const rows = listMemories(projectId, limit, {
+            branch,
+            asOf
+        });
+        logger.info(
+            `Listing ${rows.length} memories project=${projectId ?? "all"} branch=${branch ?? "main"} asOf=${asOf ?? "now"} limit=${limit}`
+        );
         rows.forEach((row, index) => {
             logger.info(
-                `${index + 1}. ${row.id} [${row.kind}] ${row.title} importance=${row.importance.toFixed(2)} confidence=${row.confidence.toFixed(2)}`
+                `${index + 1}. ${row.id} [${row.kind}] ${row.title} branch=${row.branch ?? "main"} importance=${row.importance.toFixed(2)} confidence=${row.confidence.toFixed(2)}`
             );
         });
         return;
@@ -80,6 +95,12 @@ export async function memoryCommand(action: string, cliArgs: string[] = []): Pro
         }
 
         const projectId = readStringOption(parsed, ["project-id", "projectId"]);
+        const branch = readStringOption(parsed, ["branch"]);
+        const asOfRaw = readNumberOption(parsed, ["as-of", "asOf"]);
+        const asOf =
+            typeof asOfRaw === "number" && Number.isFinite(asOfRaw)
+                ? Math.max(0, Math.trunc(asOfRaw))
+                : undefined;
         const topK = clampInteger(readNumberOption(parsed, ["top-k", "topK"]), 10, 1, 200);
         const minScoreRaw = readNumberOption(parsed, ["min-score", "minScore"]);
         const minScore =
@@ -89,13 +110,17 @@ export async function memoryCommand(action: string, cliArgs: string[] = []): Pro
 
         const rows = await searchMemories(query, {
             projectId,
+            branch,
             topK,
-            minScore
+            minScore,
+            asOf
         });
-        logger.info(`Search returned ${rows.length} memories for query="${query}" project=${projectId ?? "all"}`);
+        logger.info(
+            `Search returned ${rows.length} memories for query="${query}" project=${projectId ?? "all"} branch=${branch ?? "main"} asOf=${asOf ?? "now"}`
+        );
         rows.forEach((row, index) =>
             logger.info(
-                `${index + 1}. ${row.id} [${row.kind}] score=${row.score.toFixed(4)} sim=${row.similarity.toFixed(4)} recency=${row.recency.toFixed(4)} ${row.title}`
+                `${index + 1}. ${row.id} [${row.kind}] branch=${row.branch ?? "main"} score=${row.score.toFixed(4)} sim=${row.similarity.toFixed(4)} recency=${row.recency.toFixed(4)} ${row.title}`
             )
         );
         return;
@@ -108,7 +133,19 @@ export async function memoryCommand(action: string, cliArgs: string[] = []): Pro
             return;
         }
 
-        const row = getMemoryById(id);
+        const projectId = readStringOption(parsed, ["project-id", "projectId"]);
+        const branch = readStringOption(parsed, ["branch"]);
+        const asOfRaw = readNumberOption(parsed, ["as-of", "asOf"]);
+        const asOf =
+            typeof asOfRaw === "number" && Number.isFinite(asOfRaw)
+                ? Math.max(0, Math.trunc(asOfRaw))
+                : undefined;
+
+        const row = getMemoryById(id, {
+            projectId,
+            branch,
+            asOf
+        });
         if (!row) {
             logger.warn("Memory not found");
             return;
@@ -119,7 +156,7 @@ export async function memoryCommand(action: string, cliArgs: string[] = []): Pro
         const copilot = summarizeContent(row.copilotContent ?? "", full);
 
         logger.info(
-            `Memory ${action === "resurrect" ? "resurrection" : "record"} id=${row.id} project=${row.projectId} kind=${row.kind} source=${row.sourceType}`
+            `Memory ${action === "resurrect" ? "resurrection" : "record"} id=${row.id} logicalId=${row.logicalId ?? row.id} project=${row.projectId} branch=${row.branch ?? "main"} kind=${row.kind} source=${row.sourceType}`
         );
         logger.info(`title: ${row.title}`);
         logger.info(`summary: ${row.summary}`);
@@ -136,8 +173,146 @@ export async function memoryCommand(action: string, cliArgs: string[] = []): Pro
             logger.warn("Usage: memory delete <id>");
             return;
         }
-        await deleteMemory(id);
-        logger.info(`Deleted memory ${id}`);
+        const projectId = readStringOption(parsed, ["project-id", "projectId"]);
+        const branch = readStringOption(parsed, ["branch"]);
+
+        await deleteMemory(id, {
+            projectId,
+            branch
+        });
+        logger.info(`Deleted memory ${id} project=${projectId ?? "auto"} branch=${branch ?? "main"}`);
+        return;
+    }
+
+    if (action === "branch") {
+        const subAction = (positionals[0] ?? "list").toLowerCase();
+        const projectId = readStringOption(parsed, ["project-id", "projectId"]);
+
+        if (!projectId) {
+            logger.warn("Usage: memory branch <list|create|merge|switch> --project-id=<id> [...]");
+            return;
+        }
+
+        if (subAction === "list") {
+            const branches = listMemoryBranches(projectId);
+            logger.info(`Branches for project=${projectId}`);
+            branches.forEach((branch, index) => {
+                logger.info(
+                    `${index + 1}. ${branch.branch} parent=${branch.parentBranch ?? "n/a"} forkedFromCommit=${branch.forkedFromCommit ?? "n/a"}`
+                );
+            });
+            return;
+        }
+
+        if (subAction === "create") {
+            const branch = (positionals[1] ?? "").trim() || readStringOption(parsed, ["branch"]);
+            if (!branch) {
+                logger.warn("Usage: memory branch create <branch> --project-id=<id> [--from-branch=<name>] [--forked-from-commit=<id>]");
+                return;
+            }
+
+            const fromBranch = readStringOption(parsed, ["from-branch", "fromBranch"]);
+            const forkedFromCommit = readStringOption(parsed, ["forked-from-commit", "forkedFromCommit"]);
+
+            const created = createMemoryBranch({
+                projectId,
+                branch,
+                fromBranch,
+                forkedFromCommit
+            });
+
+            logger.info(
+                `Created branch ${created.branch} project=${created.projectId} parent=${created.parentBranch ?? "main"} forkedFromCommit=${created.forkedFromCommit ?? "n/a"}`
+            );
+            return;
+        }
+
+        if (subAction === "merge") {
+            const sourceBranch = (positionals[1] ?? "").trim();
+            const targetBranch = (positionals[2] ?? "").trim();
+            if (!sourceBranch || !targetBranch) {
+                logger.warn("Usage: memory branch merge <sourceBranch> <targetBranch> --project-id=<id> [--strategy=<source-wins|target-wins>]");
+                return;
+            }
+
+            const strategyRaw = readStringOption(parsed, ["strategy"]);
+            const strategy = strategyRaw === "target-wins" ? "target-wins" : "source-wins";
+
+            const result = await mergeMemoryBranch({
+                projectId,
+                sourceBranch,
+                targetBranch,
+                strategy
+            });
+
+            logger.info(
+                `Merged branch source=${result.sourceBranch} target=${result.targetBranch} strategy=${result.strategy} upserts=${result.appliedUpserts} deletes=${result.appliedDeletes} skipped=${result.skipped}`
+            );
+            return;
+        }
+
+        if (subAction === "switch") {
+            const toBranch = (positionals[1] ?? "").trim() || readStringOption(parsed, ["branch"]);
+            if (!toBranch) {
+                logger.warn("Usage: memory branch switch <toBranch> --project-id=<id> [--from-branch=<name>]");
+                return;
+            }
+
+            const fromBranch = readStringOption(parsed, ["from-branch", "fromBranch"]);
+            const ensured = createMemoryBranch({
+                projectId,
+                branch: toBranch,
+                fromBranch
+            });
+
+            logger.info(
+                `Switched branch context project=${projectId} from=${fromBranch ?? "main"} to=${ensured.branch}`
+            );
+            return;
+        }
+
+        logger.warn("Unknown memory branch action. Use: list | create | merge | switch");
+        return;
+    }
+
+    if (action === "temporal") {
+        const subAction = (positionals[0] ?? "diff").toLowerCase();
+        if (subAction !== "diff") {
+            logger.warn("Unknown memory temporal action. Use: diff");
+            return;
+        }
+
+        const projectId = readStringOption(parsed, ["project-id", "projectId"]);
+        if (!projectId) {
+            logger.warn("Usage: memory temporal diff --project-id=<id> [--branch=<name>] --from=<unix-ms> --to=<unix-ms> [--limit=<n>]");
+            return;
+        }
+
+        const branch = readStringOption(parsed, ["branch"]);
+        const from = readNumberOption(parsed, ["from"]);
+        const to = readNumberOption(parsed, ["to"]);
+        if (typeof from !== "number" || !Number.isFinite(from) || typeof to !== "number" || !Number.isFinite(to)) {
+            logger.warn("Both --from and --to must be finite unix timestamps (ms).");
+            return;
+        }
+
+        const limit = clampInteger(readNumberOption(parsed, ["limit"]), 50, 1, 2000);
+        const diff = diffMemoriesBetween({
+            projectId,
+            branch,
+            from: Math.max(0, Math.trunc(from)),
+            to: Math.max(0, Math.trunc(to)),
+            limit
+        });
+
+        logger.info(
+            `Temporal diff project=${diff.projectId} branch=${diff.branch} from=${diff.from} to=${diff.to} added=${diff.totals.added} removed=${diff.totals.removed} modified=${diff.totals.modified}`
+        );
+        diff.items.forEach((item, index) => {
+            logger.info(
+                `${index + 1}. [${item.changeType}] ${item.logicalId} ${item.title} kind=${item.kind} source=${item.sourceType}`
+            );
+        });
         return;
     }
 
