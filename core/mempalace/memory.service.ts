@@ -23,13 +23,20 @@ import type {
     MemoryCompactionDashboardOptions,
     MemoryCompactionDashboardPayload,
     MemoryCompactionIntegrityAnomalies,
+    MemoryCompactionOpportunityItem,
+    MemoryCompactionOpportunityOptions,
+    MemoryCompactionOpportunityReport,
     MemoryCompactionProjectBreakdownItem,
     MemoryCompactionStats,
     MemoryCompactionTrendSnapshot,
     MemoryRecord,
+    MemoryResurrectionAuditIssue,
+    MemoryResurrectionAuditOptions,
+    MemoryResurrectionAuditReport,
     MemorySearchOptions,
     ScoredMemory
 } from "./memory.types";
+import { resolveProjectRisk } from "./risk";
 
 const MEMORY_COLLECTION = "cortexa_memories";
 const DEFAULT_VECTOR_DIMENSION = 256;
@@ -39,6 +46,11 @@ const DEFAULT_DASHBOARD_MAX_TREND_POINTS = 120;
 const DEFAULT_DASHBOARD_MAX_PROJECTS = 50;
 const DEFAULT_DASHBOARD_PER_PROJECT_SNAPSHOT_LIMIT = 25;
 const DEFAULT_DASHBOARD_SNAPSHOT_RETENTION_DAYS = 180;
+const DEFAULT_OPPORTUNITY_LIMIT = 25;
+const DEFAULT_OPPORTUNITY_SCAN_LIMIT = 2000;
+const DEFAULT_OPPORTUNITY_MIN_CONTENT_CHARS = 220;
+const DEFAULT_RESURRECTION_AUDIT_LIMIT = 5000;
+const DEFAULT_RESURRECTION_AUDIT_MAX_ISSUES = 10;
 
 const db = connectSqlite();
 initializeSqlite(db);
@@ -233,22 +245,6 @@ function buildCompactionAggregateRows(projectId?: string): CompactionAggregateRo
         content: String(row.content ?? ""),
         lastAccessedAt: toFiniteInteger(row.lastAccessedAt) ?? 0
     }));
-}
-
-function resolveProjectRisk(stats: MemoryCompactionStats): "healthy" | "warning" | "critical" {
-    if (stats.integrityAnomalies.total > 0) {
-        return "critical";
-    }
-
-    if (stats.totalRows >= 25 && stats.compactionRate < 0.5) {
-        return "warning";
-    }
-
-    if (stats.totalRows >= 100 && stats.savedPercent < 5) {
-        return "warning";
-    }
-
-    return "healthy";
 }
 
 function snapshotId(projectId: string | undefined, createdAt: number): string {
@@ -476,6 +472,76 @@ function normalizeBackfillLimit(limit: number | undefined): number {
     return Math.min(20_000, Math.max(1, Math.trunc(limit)));
 }
 
+function normalizeResurrectionAuditLimit(limit: number | undefined): number {
+    if (typeof limit !== "number" || !Number.isFinite(limit)) {
+        return DEFAULT_RESURRECTION_AUDIT_LIMIT;
+    }
+
+    return Math.min(50_000, Math.max(1, Math.trunc(limit)));
+}
+
+function normalizeResurrectionAuditMaxIssues(maxIssues: number | undefined): number {
+    if (typeof maxIssues !== "number" || !Number.isFinite(maxIssues)) {
+        return DEFAULT_RESURRECTION_AUDIT_MAX_ISSUES;
+    }
+
+    return Math.min(100, Math.max(0, Math.trunc(maxIssues)));
+}
+
+function normalizeOpportunityLimit(limit: number | undefined): number {
+    if (typeof limit !== "number" || !Number.isFinite(limit)) {
+        return DEFAULT_OPPORTUNITY_LIMIT;
+    }
+
+    return Math.min(500, Math.max(1, Math.trunc(limit)));
+}
+
+function normalizeOpportunityScanLimit(scanLimit: number | undefined, itemLimit: number): number {
+    if (typeof scanLimit !== "number" || !Number.isFinite(scanLimit)) {
+        return Math.min(50_000, Math.max(DEFAULT_OPPORTUNITY_SCAN_LIMIT, itemLimit * 20));
+    }
+
+    return Math.min(50_000, Math.max(itemLimit, Math.trunc(scanLimit)));
+}
+
+function normalizeOpportunityMinContentChars(minContentChars: number | undefined): number {
+    if (typeof minContentChars !== "number" || !Number.isFinite(minContentChars)) {
+        return DEFAULT_OPPORTUNITY_MIN_CONTENT_CHARS;
+    }
+
+    return Math.min(20_000, Math.max(64, Math.trunc(minContentChars)));
+}
+
+function buildResurrectionAuditRecommendations(report: {
+    scannedRows: number;
+    anomalies: MemoryCompactionIntegrityAnomalies;
+    compactionOpportunityRate: number;
+}): string[] {
+    if (report.scannedRows === 0) {
+        return ["No memory rows were scanned. Ingest data first, then re-run memory audit."];
+    }
+
+    const recommendations: string[] = [];
+
+    if (report.anomalies.total > 0) {
+        recommendations.push(
+            "Integrity anomalies detected. Inspect issue samples and re-ingest affected sources to restore full resurrection fidelity."
+        );
+    }
+
+    if (report.compactionOpportunityRate >= 0.2) {
+        recommendations.push(
+            "A notable share of rows are still plain. Consider `memory backfill --apply` during a maintenance window."
+        );
+    }
+
+    if (recommendations.length === 0) {
+        recommendations.push("Resurrection integrity checks look healthy. Keep periodic audits enabled.");
+    }
+
+    return recommendations;
+}
+
 function rowToMemory(row: Record<string, unknown>): MemoryRecord {
     const storedContent = String(row.content ?? "");
     const content = resurrectContentFromStorage(storedContent);
@@ -498,6 +564,19 @@ function rowToMemory(row: Record<string, unknown>): MemoryRecord {
         sourceRef: row.sourceRef ? String(row.sourceRef) : undefined,
         copilotContent
     };
+}
+
+function chunkIds(ids: string[], chunkSize: number): string[][] {
+    if (ids.length === 0) {
+        return [];
+    }
+
+    const chunks: string[][] = [];
+    for (let index = 0; index < ids.length; index += chunkSize) {
+        chunks.push(ids.slice(index, index + chunkSize));
+    }
+
+    return chunks;
 }
 
 export async function upsertMemory(input: CreateMemoryInput): Promise<MemoryRecord> {
@@ -714,6 +793,226 @@ export function backfillMemoryCompaction(
     };
 }
 
+export function auditMemoryResurrection(
+    options: MemoryResurrectionAuditOptions = {}
+): MemoryResurrectionAuditReport {
+    const projectId = normalizeOptionalProjectId(options.projectId);
+    const limit = normalizeResurrectionAuditLimit(options.limit);
+    const maxIssues = normalizeResurrectionAuditMaxIssues(options.maxIssues);
+
+    const rows = projectId
+        ? db
+            .prepare(
+                `
+            SELECT id, projectId, kind, sourceType, title, content, lastAccessedAt
+            FROM memories
+            WHERE projectId = ?
+            ORDER BY lastAccessedAt DESC
+            LIMIT ?
+          `
+            )
+            .all<Record<string, unknown>>(projectId, limit)
+        : db
+            .prepare(
+                `
+            SELECT id, projectId, kind, sourceType, title, content, lastAccessedAt
+            FROM memories
+            ORDER BY lastAccessedAt DESC
+            LIMIT ?
+          `
+            )
+            .all<Record<string, unknown>>(limit);
+
+    let compactedRows = 0;
+    let plainRows = 0;
+    let validCompactedRows = 0;
+    const anomalies = createIntegrityAnomalies();
+    const issueSamples: MemoryResurrectionAuditIssue[] = [];
+
+    for (const row of rows) {
+        const analysis = analyzeStoredContent(String(row.content ?? ""));
+
+        if (!analysis.isCompacted) {
+            plainRows += 1;
+            continue;
+        }
+
+        compactedRows += 1;
+
+        if (analysis.integrity === "invalid_checksum") {
+            anomalies.invalidChecksum += 1;
+
+            if (issueSamples.length < maxIssues) {
+                issueSamples.push({
+                    id: String(row.id ?? ""),
+                    projectId: normalizeProjectId(row.projectId),
+                    kind: String(row.kind ?? "semantic") as MemoryRecord["kind"],
+                    sourceType: String(row.sourceType ?? "manual") as MemoryRecord["sourceType"],
+                    title: String(row.title ?? ""),
+                    integrity: "invalid_checksum",
+                    preview: analysis.preview,
+                    storedChars: analysis.storedChars,
+                    originalChars: analysis.originalChars,
+                    savedChars: analysis.savedChars,
+                    lastAccessedAt: toFiniteInteger(row.lastAccessedAt) ?? 0
+                });
+            }
+
+            continue;
+        }
+
+        if (analysis.integrity === "decode_error") {
+            anomalies.decodeError += 1;
+
+            if (issueSamples.length < maxIssues) {
+                issueSamples.push({
+                    id: String(row.id ?? ""),
+                    projectId: normalizeProjectId(row.projectId),
+                    kind: String(row.kind ?? "semantic") as MemoryRecord["kind"],
+                    sourceType: String(row.sourceType ?? "manual") as MemoryRecord["sourceType"],
+                    title: String(row.title ?? ""),
+                    integrity: "decode_error",
+                    preview: analysis.preview,
+                    storedChars: analysis.storedChars,
+                    originalChars: analysis.originalChars,
+                    savedChars: analysis.savedChars,
+                    lastAccessedAt: toFiniteInteger(row.lastAccessedAt) ?? 0
+                });
+            }
+
+            continue;
+        }
+
+        validCompactedRows += 1;
+    }
+
+    anomalies.total = anomalies.invalidChecksum + anomalies.decodeError;
+    const scannedRows = rows.length;
+    const anomalyRate = compactedRows > 0 ? anomalies.total / compactedRows : 0;
+    const compactionOpportunityRate = scannedRows > 0 ? plainRows / scannedRows : 0;
+
+    return {
+        projectId,
+        scannedRows,
+        compactedRows,
+        plainRows,
+        validCompactedRows,
+        anomalies,
+        anomalyRate,
+        compactionOpportunityRate,
+        issueSamples,
+        recommendations: buildResurrectionAuditRecommendations({
+            scannedRows,
+            anomalies,
+            compactionOpportunityRate
+        })
+    };
+}
+
+export function getMemoryCompactionOpportunities(
+    options: MemoryCompactionOpportunityOptions = {}
+): MemoryCompactionOpportunityReport {
+    const projectId = normalizeOptionalProjectId(options.projectId);
+    const limit = normalizeOpportunityLimit(options.limit);
+    const scanLimit = normalizeOpportunityScanLimit(options.scanLimit, limit);
+    const minContentChars = normalizeOpportunityMinContentChars(options.minContentChars);
+
+    const rows = projectId
+        ? db
+            .prepare(
+                `
+            SELECT id, projectId, kind, sourceType, title, sourceRef, content, lastAccessedAt
+            FROM memories
+            WHERE projectId = ?
+            ORDER BY lastAccessedAt DESC
+            LIMIT ?
+          `
+            )
+            .all<Record<string, unknown>>(projectId, scanLimit)
+        : db
+            .prepare(
+                `
+            SELECT id, projectId, kind, sourceType, title, sourceRef, content, lastAccessedAt
+            FROM memories
+            ORDER BY lastAccessedAt DESC
+            LIMIT ?
+          `
+            )
+            .all<Record<string, unknown>>(scanLimit);
+
+    let plainRows = 0;
+    let candidates = 0;
+    let totalEstimatedSavedChars = 0;
+    const items: MemoryCompactionOpportunityItem[] = [];
+
+    for (const row of rows) {
+        const storedContent = String(row.content ?? "");
+        const storedAnalysis = analyzeStoredContent(storedContent);
+        if (storedAnalysis.isCompacted) {
+            continue;
+        }
+
+        plainRows += 1;
+
+        const restoredContent = resurrectContentFromStorage(storedContent);
+        const contentChars = restoredContent.length;
+        if (contentChars < minContentChars) {
+            continue;
+        }
+
+        const compactedCandidate = compactContentForStorage(restoredContent);
+        if (compactedCandidate === restoredContent) {
+            continue;
+        }
+
+        const estimatedStoredChars = compactedCandidate.length;
+        const estimatedSavedChars = Math.max(0, contentChars - estimatedStoredChars);
+        if (estimatedSavedChars <= 0) {
+            continue;
+        }
+
+        const estimatedSavedPercent = contentChars > 0 ? (estimatedSavedChars / contentChars) * 100 : 0;
+        const estimatedCompressionRatio = estimatedStoredChars / Math.max(1, contentChars);
+
+        candidates += 1;
+        totalEstimatedSavedChars += estimatedSavedChars;
+
+        items.push({
+            id: String(row.id ?? ""),
+            projectId: normalizeProjectId(row.projectId),
+            kind: String(row.kind ?? "semantic") as MemoryRecord["kind"],
+            sourceType: String(row.sourceType ?? "manual") as MemoryRecord["sourceType"],
+            title: String(row.title ?? ""),
+            sourceRef: row.sourceRef ? String(row.sourceRef) : undefined,
+            lastAccessedAt: toFiniteInteger(row.lastAccessedAt) ?? 0,
+            contentChars,
+            estimatedStoredChars,
+            estimatedSavedChars,
+            estimatedSavedPercent,
+            estimatedCompressionRatio
+        });
+    }
+
+    items.sort((a, b) => {
+        const savedGap = b.estimatedSavedChars - a.estimatedSavedChars;
+        if (savedGap !== 0) {
+            return savedGap;
+        }
+
+        return b.lastAccessedAt - a.lastAccessedAt;
+    });
+
+    return {
+        generatedAt: Date.now(),
+        projectId,
+        scannedRows: rows.length,
+        plainRows,
+        candidates,
+        totalEstimatedSavedChars,
+        items: items.slice(0, limit)
+    };
+}
+
 export async function searchMemories(
     query: string,
     options: MemorySearchOptions = {}
@@ -859,13 +1158,38 @@ export async function searchMemories(
 }
 
 export async function deleteMemory(id: string): Promise<void> {
-    db.prepare(`DELETE FROM memories WHERE id = ?`).run(id);
-    try {
-        await deleteVectorItems(MEMORY_COLLECTION, [id]);
-    } catch (error) {
-        vectorReady = false;
-        warnVectorUnavailableOnce("delete", error);
+    await deleteMemoriesByIds([id]);
+}
+
+export async function deleteMemoriesByIds(ids: string[]): Promise<number> {
+    const uniqueIds = [...new Set(ids.map((id) => String(id ?? "").trim()).filter(Boolean))];
+    if (uniqueIds.length === 0) {
+        return 0;
     }
+
+    const SQLITE_PARAM_LIMIT = 900;
+    let deleted = 0;
+
+    for (const batch of chunkIds(uniqueIds, SQLITE_PARAM_LIMIT)) {
+        const placeholders = batch.map(() => "?").join(",");
+        const outcome = db.prepare(`DELETE FROM memories WHERE id IN (${placeholders})`).run(...batch) as {
+            changes?: unknown;
+        };
+
+        const changed = Number(outcome?.changes ?? 0);
+        if (Number.isFinite(changed) && changed > 0) {
+            deleted += changed;
+        }
+
+        try {
+            await deleteVectorItems(MEMORY_COLLECTION, batch);
+        } catch (error) {
+            vectorReady = false;
+            warnVectorUnavailableOnce("delete", error);
+        }
+    }
+
+    return deleted;
 }
 
 export const memoryService = {
@@ -875,6 +1199,9 @@ export const memoryService = {
     list: listMemories,
     compactionStats: getMemoryCompactionStats,
     compactionDashboard: getMemoryCompactionDashboard,
+    compactionOpportunities: getMemoryCompactionOpportunities,
     backfillCompaction: backfillMemoryCompaction,
+    auditResurrection: auditMemoryResurrection,
+    deleteMany: deleteMemoriesByIds,
     delete: deleteMemory
 };

@@ -3,7 +3,7 @@
     "version": "0.1.0",
     "scripts": {
         "build": "tsc -p ../../tsconfig.json",
-        "start": "node dist/apps/daemon/src/server.js",
+        "start": "node ../../dist/apps/daemon/src/server.js",
         "dev": "ts-node src/server.ts"
     },
     "dependencies": {

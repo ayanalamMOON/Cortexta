@@ -1,5 +1,12 @@
 import { runIngestion } from "../../core/ingestion/ingest.pipeline";
-import { clampInteger, hasFlag, parseCliArgs, readNumberOption, readStringOption } from "../utils/args";
+import {
+    clampInteger,
+    hasFlag,
+    parseCliArgs,
+    readBooleanOption,
+    readNumberOption,
+    readStringOption
+} from "../utils/args";
 import { logger } from "../utils/logger";
 
 function normalizeOptionalInt(value: number | undefined, min: number, max: number): number | undefined {
@@ -20,6 +27,9 @@ export async function ingestCommand(projectPath: string, cliArgs: string[] = [])
         1,
         50_000
     );
+    const skipUnchanged = hasFlag(parsed, ["no-skip-unchanged", "noSkipUnchanged"])
+        ? false
+        : readBooleanOption(parsed, ["skip-unchanged", "skipUnchanged"], true);
 
     const includeChats = hasFlag(parsed, ["no-include-chats", "noIncludeChats"])
         ? false
@@ -29,6 +39,7 @@ export async function ingestCommand(projectPath: string, cliArgs: string[] = [])
         projectPath,
         projectId,
         includeChats,
+        skipUnchanged,
         maxFiles,
         maxChatFiles,
         chatSearchRoots: chatRoot ? [chatRoot] : undefined
@@ -38,10 +49,18 @@ export async function ingestCommand(projectPath: string, cliArgs: string[] = [])
         projectPath,
         projectId: projectId ?? "auto",
         includeChats,
+        skipUnchanged,
         filesScanned: result.filesScanned,
+        codeFilesSkippedUnchanged: result.codeFilesSkippedUnchanged,
+        chatFilesScanned: result.chatFilesScanned,
+        chatFilesSkippedUnchanged: result.chatFilesSkippedUnchanged,
         codeChunks: result.codeChunks,
         chatTurns: result.chatTurns,
         memoriesStored: result.memoriesStored,
+        staleMemoriesRemoved: result.staleMemoriesRemoved,
+        staleCodeMemoriesRemoved: result.staleCodeMemoriesRemoved,
+        staleChatMemoriesRemoved: result.staleChatMemoriesRemoved,
+        ingestVersion: result.ingestVersion,
         errors: result.errors.length
     });
 

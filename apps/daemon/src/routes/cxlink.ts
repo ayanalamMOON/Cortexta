@@ -1,8 +1,10 @@
 import express from "express";
 import { toBoolean, toBoundedInt, toBoundedNumber, toRecord, toTrimmedString } from "../../../../core/daemon/http";
 import {
+    auditMemoryResurrection,
     backfillMemoryCompaction,
     getMemoryCompactionDashboard,
+    getMemoryCompactionOpportunities,
     getMemoryCompactionStats
 } from "../../../../core/mempalace/memory.service";
 import { retrieveTopK } from "../../../../core/retrieval/retriever";
@@ -10,16 +12,62 @@ import { buildPromptEnvelope } from "../../../../packages/core/src/cxlink/adapte
 import { toCxfText } from "../../../../packages/core/src/cxlink/cxf-format";
 import { resolveContext } from "../../../../packages/core/src/cxlink/hub";
 import type { ContextAtom } from "../../../../packages/core/src/types/context";
+import {
+    getSelfHealingStatus,
+    triggerSelfHealingNow
+} from "../self-healing";
 
 export const cxlinkRouter = express.Router();
 
 interface CxlinkBundle {
     query: string;
     memories: any[];
+    memoryHealth: MemoryHealthSignal;
     atoms: ContextAtom[];
     resolved: ReturnType<typeof resolveContext>;
     cxf: string;
     envelope: ReturnType<typeof buildPromptEnvelope>;
+}
+
+interface MemoryHealthSignal {
+    projectId?: string;
+    totalRows: number;
+    compactionRate: number;
+    savedPercent: number;
+    anomalyTotal: number;
+    status: "healthy" | "warning" | "critical";
+    recommendation: string;
+}
+
+function buildMemoryHealthSignal(projectId?: string): MemoryHealthSignal {
+    const stats = getMemoryCompactionStats(projectId);
+
+    let status: MemoryHealthSignal["status"] = "healthy";
+    let recommendation = "Memory quality is healthy. Keep regular ingestion and dashboard snapshots running.";
+
+    if (stats.integrityAnomalies.total > 0) {
+        status = "critical";
+        recommendation =
+            "Integrity anomalies detected. Run memory audit and re-ingest affected sources before critical agent tasks.";
+    } else if (stats.totalRows >= 50 && stats.compactionRate < 0.5) {
+        status = "warning";
+        recommendation =
+            "Compaction coverage is low for this memory volume. Consider running memory backfill --apply in maintenance.";
+    } else if (stats.totalRows >= 120 && stats.savedPercent < 5) {
+        status = "warning";
+        recommendation =
+            "Compression savings are low at current scale. Review compaction thresholds and run dashboard trend analysis.";
+    }
+
+    return {
+        projectId,
+        totalRows: stats.totalRows,
+        compactionRate: stats.compactionRate,
+        savedPercent: stats.savedPercent,
+        anomalyTotal: stats.integrityAnomalies.total,
+        status,
+        recommendation
+    };
 }
 
 async function buildCxlinkBundle(params: {
@@ -78,9 +126,12 @@ async function buildCxlinkBundle(params: {
         includeTokenStats: true
     });
 
+    const memoryHealth = buildMemoryHealthSignal(params.projectId);
+
     return {
         query: params.query,
         memories,
+        memoryHealth,
         atoms,
         resolved,
         cxf,
@@ -210,6 +261,100 @@ cxlinkRouter.post("/compaction/backfill", (req: any, res: any) => {
     }
 });
 
+cxlinkRouter.post("/compaction/opportunities", (req: any, res: any) => {
+    const body = toRecord(req.body);
+    const projectId = toTrimmedString(body.projectId, 256);
+    const limit = toBoundedInt(body.limit, 1, 500);
+    const scanLimit = toBoundedInt(body.scanLimit, 1, 50_000);
+    const minContentChars = toBoundedInt(body.minContentChars, 64, 20_000);
+
+    try {
+        const opportunities = getMemoryCompactionOpportunities({
+            projectId,
+            limit,
+            scanLimit,
+            minContentChars
+        });
+
+        res.json({
+            ok: true,
+            route: "cxlink/compaction/opportunities",
+            opportunities
+        });
+    } catch (error) {
+        res.status(500).json({
+            ok: false,
+            error: error instanceof Error ? error.message : String(error)
+        });
+    }
+});
+
+cxlinkRouter.post("/compaction/audit", (req: any, res: any) => {
+    const body = toRecord(req.body);
+    const projectId = toTrimmedString(body.projectId, 256);
+    const limit = toBoundedInt(body.limit, 1, 50_000);
+    const maxIssues = toBoundedInt(body.maxIssues, 0, 100);
+
+    try {
+        const report = auditMemoryResurrection({
+            projectId,
+            limit,
+            maxIssues
+        });
+
+        res.json({
+            ok: true,
+            route: "cxlink/compaction/audit",
+            report
+        });
+    } catch (error) {
+        res.status(500).json({
+            ok: false,
+            error: error instanceof Error ? error.message : String(error)
+        });
+    }
+});
+
+cxlinkRouter.post("/compaction/self-heal/status", (_req: any, res: any) => {
+    try {
+        const status = getSelfHealingStatus();
+        res.json({
+            ok: true,
+            route: "cxlink/compaction/self-heal/status",
+            status
+        });
+    } catch (error) {
+        res.status(500).json({
+            ok: false,
+            error: error instanceof Error ? error.message : String(error)
+        });
+    }
+});
+
+cxlinkRouter.post("/compaction/self-heal/trigger", async (req: any, res: any) => {
+    const body = toRecord(req.body);
+    const reason = toTrimmedString(body.reason, 512) ?? "manual-trigger";
+    const dryRunOnly = toBoolean(body.dryRunOnly, false);
+
+    try {
+        const report = await triggerSelfHealingNow({
+            reason,
+            dryRunOnly
+        });
+        res.json({
+            ok: true,
+            route: "cxlink/compaction/self-heal/trigger",
+            report,
+            status: getSelfHealingStatus()
+        });
+    } catch (error) {
+        res.status(500).json({
+            ok: false,
+            error: error instanceof Error ? error.message : String(error)
+        });
+    }
+});
+
 cxlinkRouter.post("/context", async (req: any, res: any) => {
     const body = toRecord(req.body);
     const query = toTrimmedString(body.query, 16_384);
@@ -237,6 +382,7 @@ cxlinkRouter.post("/context", async (req: any, res: any) => {
             route: "cxlink/context",
             agent: bundle.resolved.agent,
             tokens: bundle.resolved.tokens,
+            memoryHealth: bundle.memoryHealth,
             context: bundle.resolved.context.rendered,
             cxf: bundle.cxf,
             envelope: bundle.envelope
@@ -276,6 +422,7 @@ cxlinkRouter.post("/query", async (req: any, res: any) => {
             route: "cxlink/query",
             query,
             count: bundle.memories.length,
+            memoryHealth: bundle.memoryHealth,
             results: bundle.memories,
             cxf: bundle.cxf,
             envelope: bundle.envelope
@@ -318,6 +465,7 @@ cxlinkRouter.post("/plan", async (req: any, res: any) => {
             query,
             agent: bundle.resolved.agent,
             tokens: bundle.resolved.tokens,
+            memoryHealth: bundle.memoryHealth,
             steps,
             cxf: bundle.cxf,
             envelope: bundle.envelope

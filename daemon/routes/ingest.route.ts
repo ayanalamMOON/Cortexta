@@ -8,12 +8,18 @@ ingestRouter.post("/", async (req: any, res: any) => {
         path: projectPath,
         projectId,
         includeChats,
-        maxFiles
+        skipUnchanged,
+        maxFiles,
+        maxChatFiles,
+        chatRoot
     } = (req.body ?? {}) as {
         path?: string;
         projectId?: string;
         includeChats?: boolean;
+        skipUnchanged?: boolean;
         maxFiles?: number;
+        maxChatFiles?: number;
+        chatRoot?: string;
     };
 
     if (!projectPath) {
@@ -26,7 +32,10 @@ ingestRouter.post("/", async (req: any, res: any) => {
             projectPath,
             projectId,
             includeChats: Boolean(includeChats),
-            maxFiles
+            skipUnchanged: skipUnchanged !== false,
+            maxFiles,
+            maxChatFiles,
+            chatSearchRoots: chatRoot ? [String(chatRoot)] : undefined
         });
 
         res.json({ ok: true, result });

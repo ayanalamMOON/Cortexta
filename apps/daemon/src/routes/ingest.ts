@@ -9,6 +9,7 @@ ingestRouter.post("/", async (req: any, res: any) => {
     const projectPath = toTrimmedString(body.path, 4096);
     const projectId = toTrimmedString(body.projectId, 256);
     const includeChats = toBoolean(body.includeChats, false);
+    const skipUnchanged = toBoolean(body.skipUnchanged, true);
     const maxFiles = toBoundedInt(body.maxFiles, 0, 200_000);
     const maxChatFiles = toBoundedInt(body.maxChatFiles, 1, 50_000);
     const chatRoot = toTrimmedString(body.chatRoot, 4096);
@@ -23,6 +24,7 @@ ingestRouter.post("/", async (req: any, res: any) => {
             projectPath,
             projectId,
             includeChats,
+            skipUnchanged,
             maxFiles,
             maxChatFiles,
             chatSearchRoots: chatRoot ? [chatRoot] : undefined

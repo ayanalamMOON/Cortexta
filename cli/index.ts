@@ -1,4 +1,6 @@
+import { doctor } from "../scripts/doctor";
 import { contextCommand } from "./commands/context";
+import { evolveCommand } from "./commands/evolve";
 import { ingestCommand } from "./commands/ingest";
 import { initCommand } from "./commands/init";
 import { memoryCommand } from "./commands/memory";
@@ -47,6 +49,12 @@ export async function runCli(): Promise<void> {
             return;
         case "context":
             await contextCommand(args.slice(1).join(" "));
+            return;
+        case "doctor":
+            await doctor();
+            return;
+        case "evolve":
+            await evolveCommand(args.slice(1));
             return;
         case "daemon": {
             const { daemonCommand } = require("./commands/daemon") as typeof import("./commands/daemon");

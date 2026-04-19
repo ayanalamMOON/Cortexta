@@ -24,6 +24,24 @@ CORTEXA_DB_PATH=data/cortexa.db
 CORTEXA_VECTOR_PROVIDER=qdrant
 CORTEXA_VECTOR_URL=http://localhost:6333
 CORTEXA_DAEMON_TOKEN=replace-with-secure-token
+
+# Optional self-healing scheduler (safe by default)
+CORTEXA_SELF_HEAL_ENABLED=true
+CORTEXA_SELF_HEAL_PROJECT_ID=cortexta
+CORTEXA_SELF_HEAL_RUN_ON_START=true
+CORTEXA_SELF_HEAL_APPLY_ENABLED=false
+CORTEXA_SELF_HEAL_MAX_ALLOWED_ANOMALIES=0
+CORTEXA_SELF_HEAL_MIN_OPPORTUNITY_RATE=0.2
+CORTEXA_SELF_HEAL_MIN_DRY_RUN_COMPACTED_ROWS=50
+CORTEXA_SELF_HEAL_MAX_APPLY_ROWS=2000
+CORTEXA_SELF_HEAL_APPLY_WINDOW_START_HOUR=1
+CORTEXA_SELF_HEAL_APPLY_WINDOW_END_HOUR=5
+CORTEXA_SELF_HEAL_PERSIST_HISTORY=true
+CORTEXA_SELF_HEAL_PERSISTED_HISTORY_LIMIT=2000
+CORTEXA_SELF_HEAL_BACKOFF_ENABLED=true
+CORTEXA_SELF_HEAL_BACKOFF_MULTIPLIER=2
+CORTEXA_SELF_HEAL_BACKOFF_MAX_INTERVAL_MS=21600000
+CORTEXA_SELF_HEAL_SLO_WINDOWS_MINUTES=60,1440,10080
 ```
 
 ### 3) Initialize storage
@@ -43,7 +61,10 @@ Useful variants:
 ```bash
 pnpm run cortexa -- ingest . --project-id=cortexta --max-files=3000 --max-chat-files=500
 pnpm run cortexa -- ingest . --project-id=cortexta --no-include-chats
+pnpm run cortexa -- ingest . --project-id=cortexta --no-skip-unchanged
 ```
+
+> Default behavior uses incremental ingestion (`skip-unchanged=true`) so repeated runs avoid re-processing unchanged files.
 
 ### 5) Smoke-test retrieval
 
@@ -77,6 +98,15 @@ pnpm run cortexa -- dashboard --trend-rows=8 --top-projects=12
 pnpm run cortexa -- memory stats --project-id=cortexta
 ```
 
+If daemon token auth is enabled, verify scheduler status via API:
+
+```bash
+curl -s -X POST http://localhost:4312/cxlink/compaction/self-heal/status \
+  -H "content-type: application/json" \
+  -H "x-cortexa-token: <token>" \
+  -d '{}'
+```
+
 ### Weekly compaction hygiene
 
 1) Dry-run backfill:
@@ -97,6 +127,27 @@ Equivalent maintenance script:
 pnpm run compact:memory -- --projectId=cortexta --limit=5000 --apply
 ```
 
+### Scheduled self-healing mode (audit + guarded backfill)
+
+The daemon scheduler is designed with explicit safety gates:
+- always runs audit first
+- always runs backfill dry-run before any apply
+- blocks apply if anomaly guardrail fails
+- blocks apply outside configured apply-window hours
+- bounds apply size by `CORTEXA_SELF_HEAL_MAX_APPLY_ROWS`
+- persists run history in SQLite (`self_healing_run_history`) across restarts
+- increases schedule delay with exponential backoff on repeated `error` runs
+- tracks rolling-window SLO counters (`applied`, `dry-run-only`, `skipped`, `error`)
+
+To manually trigger a dry-run scheduler cycle:
+
+```bash
+curl -s -X POST http://localhost:4312/cxlink/compaction/self-heal/trigger \
+  -H "content-type: application/json" \
+  -H "x-cortexa-token: <token>" \
+  -d '{"reason":"ops-manual-check","dryRunOnly":true}'
+```
+
 ### Dashboard artifact export (for ops review)
 
 ```bash
@@ -110,6 +161,7 @@ pnpm run cortexa -- dashboard --out-human=./tmp/compaction-dashboard.txt
 
 ```bash
 pnpm run cortexa -- memory stats --project-id=cortexta
+pnpm run cortexa -- memory audit --project-id=cortexta --limit=5000 --max-issues=10
 pnpm run cortexa -- dashboard --project-id=cortexta --trend-rows=20
 ```
 
@@ -171,3 +223,10 @@ pnpm run cortexa -- daemon stop
 
 **Symptom:** Dashboard trends are empty/flat
 - Fix: avoid `--no-persist-snapshot` for normal runs and re-run dashboard over time to accumulate trend snapshots.
+
+**Symptom:** Self-healing scheduler repeatedly fails
+- Check `/cxlink/compaction/self-heal/status` for `consecutiveFailures`, `lastScheduledDelayMs`, and `slo.windows`.
+- Tune backoff controls with:
+  - `CORTEXA_SELF_HEAL_BACKOFF_MULTIPLIER`
+  - `CORTEXA_SELF_HEAL_BACKOFF_MAX_INTERVAL_MS`
+  - `CORTEXA_SELF_HEAL_SLO_WINDOWS_MINUTES`

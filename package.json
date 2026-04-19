@@ -1,21 +1,50 @@
 {
     "name": "cortexa",
-    "private": true,
+    "private": false,
     "version": "0.1.0",
     "description": "CORTEXA developer cognition system scaffold",
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/ayanalamMOON/Cortexta.git"
+    },
+    "homepage": "https://github.com/ayanalamMOON/Cortexta#readme",
+    "bugs": {
+        "url": "https://github.com/ayanalamMOON/Cortexta/issues"
+    },
+    "bin": {
+        "cortexa": "apps/cli/bin/cortexa.js"
+    },
+    "files": [
+        "dist/**/*",
+        "apps/cli/bin/**/*",
+        "storage/sqlite/schema.sql",
+        "README.md",
+        "LICENSE",
+        "docs/**/*"
+    ],
+    "publishConfig": {
+        "access": "public"
+    },
     "packageManager": "pnpm@9.15.0",
     "engines": {
-        "node": ">=22.16.0 <23"
+        "node": "^20.11.1 || ^22.0.0"
     },
     "scripts": {
+        "prepare": "pnpm run build",
+        "prepublishOnly": "pnpm run typecheck && pnpm run build",
         "build": "pnpm run doctor && pnpm -r build",
         "dev": "pnpm run doctor && pnpm -r dev",
         "start": "pnpm --filter @cortexa/cli start",
-        "daemon": "pnpm --filter @cortexa/daemon start",
+        "daemon": "pnpm run cortexa:daemon",
         "doctor": "ts-node scripts/doctor.ts",
         "compact:memory": "pnpm exec ts-node scripts/compact-memory.ts",
         "dashboard:compaction": "pnpm exec ts-node scripts/compaction-dashboard.ts",
         "typecheck": "pnpm exec tsc -p tsconfig.json --noEmit",
+        "test:unit": "pnpm exec ts-node tests/core-algorithms.unit.ts",
+        "test:evolution": "pnpm exec ts-node tests/memory-evolution.integration.ts",
+        "test:self-healing": "pnpm exec ts-node tests/self-healing.scheduler.integration.ts",
+        "test:ingestion": "pnpm exec ts-node tests/ingestion.incremental.integration.ts",
         "test:compaction": "pnpm exec ts-node tests/compaction.integration.ts",
         "test:cli-routing": "pnpm exec ts-node tests/apps-cli-routing.integration.ts",
         "test:daemons": "pnpm exec ts-node tests/daemon.integration.ts",
@@ -24,7 +53,15 @@
     },
     "dependencies": {
         "better-sqlite3": "^11.10.0",
-        "express": "^4.21.2"
+        "chokidar": "^4.0.3",
+        "commander": "^12.1.0",
+        "express": "^4.21.2",
+        "node-fetch": "^3.3.2",
+        "tiktoken": "^1.0.22",
+        "tree-sitter": "^0.22.4",
+        "tree-sitter-cpp": "^0.23.4",
+        "tree-sitter-typescript": "^0.23.2",
+        "ws": "^8.18.3"
     },
     "devDependencies": {
         "@types/express": "^5.0.6",

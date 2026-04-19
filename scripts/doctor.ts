@@ -26,11 +26,13 @@ function getRequiredPnpmVersion(): string {
 
 function checkNode(result: DoctorResult): void {
     const node = parseVersion(process.versions.node);
-    const ok = node.major === 22 && node.minor >= 16;
+    const supportsNode20 = node.major === 20 && node.minor >= 11;
+    const supportsNode22 = node.major === 22;
+    const ok = supportsNode20 || supportsNode22;
 
     if (!ok) {
         result.errors.push(
-            `Node runtime mismatch: found ${process.versions.node}, expected >=22.16.0 and <23. Use: nvm use 22.16.0`
+            `Node runtime mismatch: found ${process.versions.node}, expected ^20.11.1 or ^22.0.0. Use: nvm use 20.11.1 (or newer 20.x) / nvm use 22`
         );
     }
 }

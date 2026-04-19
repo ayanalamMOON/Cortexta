@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CORTEXA_VECTOR_PROVIDER: memory
+
+jobs:
+  verify-matrix:
+    name: Verify (Node ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [20, 22]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Doctor
+        run: pnpm run doctor
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Core routing/evolution tests
+        run: |
+          pnpm run test:unit
+          pnpm run test:cli-routing
+          pnpm run test:evolution
+
+  integration:
+    name: Integration (Node 22)
+    runs-on: ubuntu-latest
+    needs: verify-matrix
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Integration test suite
+        run: |
+          pnpm run test:ingestion
+          pnpm run test:compaction
+          pnpm run test:self-healing
+          pnpm run test:daemons

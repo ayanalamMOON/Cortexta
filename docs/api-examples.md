@@ -25,7 +25,35 @@ All examples below use JSON request bodies for `POST` routes.
   "ok": true,
   "service": "cortexa-daemon",
   "ts": 1713432172123,
-  "uptimeMs": 23567
+  "uptimeMs": 23567,
+  "selfHealing": {
+    "enabled": true,
+    "started": true,
+    "running": false,
+    "nextRunAt": 1713433972123,
+    "lastScheduledDelayMs": 1805421,
+    "consecutiveFailures": 0,
+    "lastOutcome": "dry-run-only",
+    "runCount": 14,
+    "slo": {
+      "generatedAt": 1713432172123,
+      "windows": [
+        {
+          "windowMinutes": 60,
+          "windowMs": 3600000,
+          "sinceMs": 1713428572123,
+          "total": 3,
+          "applied": 1,
+          "dryRunOnly": 2,
+          "skipped": 0,
+          "error": 0,
+          "successRate": 1,
+          "errorRate": 0,
+          "applyRate": 0.3333
+        }
+      ]
+    }
+  }
 }
 ```
 
@@ -38,6 +66,7 @@ All examples below use JSON request bodies for `POST` routes.
 Notes:
 - `path` is required.
 - `includeChats` defaults to `false` for API calls unless provided.
+- `skipUnchanged` defaults to `true` for API calls.
 
 **Request**
 ```json
@@ -45,6 +74,7 @@ Notes:
   "path": "C:/Users/ayana/Projects/Cortexta",
   "projectId": "cortexta",
   "includeChats": true,
+  "skipUnchanged": true,
   "maxFiles": 3000,
   "maxChatFiles": 500,
   "chatRoot": "C:/Users/ayana/AppData/Roaming/Code/User/workspaceStorage"
@@ -58,9 +88,14 @@ Notes:
   "route": "ingest",
   "result": {
     "filesScanned": 714,
+    "codeFilesSkippedUnchanged": 312,
+    "chatFilesScanned": 18,
+    "chatFilesSkippedUnchanged": 11,
     "codeChunks": 1910,
     "chatTurns": 220,
     "memoriesStored": 2130,
+    "skipUnchanged": true,
+    "ingestVersion": "ingest-v2",
     "errors": []
   }
 }
@@ -142,6 +177,11 @@ Notes:
 
 ### POST `/evolve`
 
+Notes:
+- If `text` is omitted, the route uses **consolidate mode** (existing batch consolidation behavior).
+- If `text` is provided, the route uses **progression mode** and returns `progression` stage telemetry.
+- `POST /evolve/progression` is a strict alias for progression mode and requires `text`.
+
 **Request**
 ```json
 {
@@ -161,6 +201,124 @@ Notes:
   "evolvedCount": 438,
   "removed": 62,
   "persistedCount": 438
+}
+```
+
+**Request (progression mode)**
+```json
+{
+  "projectId": "cortexta",
+  "text": "upgrade memory evolution progression telemetry",
+  "context": "operator-triggered daemon cycle",
+  "dryRun": true
+}
+```
+
+**Response (progression mode)**
+```json
+{
+  "ok": true,
+  "route": "evolve",
+  "mode": "progression",
+  "projectId": "cortexta",
+  "dryRun": true,
+  "stored": true,
+  "persisted": false,
+  "action": "store",
+  "reason": "fallback-heuristic",
+  "atomId": "mem_n4yk3x8z",
+  "progression": {
+    "proposedCandidates": 1,
+    "reviewedCandidates": 1,
+    "selectedCandidateIndex": 0,
+    "selectedScore": 0.6934,
+    "merged": false,
+    "neighborCount": 3,
+    "promoted": false,
+    "archived": false,
+    "stages": [
+      {
+        "stage": "propose",
+        "ok": true,
+        "detail": "writer-produced-1-candidate(s)",
+        "at": 1713433000000
+      },
+      {
+        "stage": "review",
+        "ok": true,
+        "detail": "selected-candidate-0-action-store",
+        "at": 1713433000005
+      },
+      {
+        "stage": "consolidate",
+        "ok": true,
+        "detail": "no-consolidation-required",
+        "at": 1713433000007
+      },
+      {
+        "stage": "archivist",
+        "ok": true,
+        "detail": "decay=1 promote=false archive=false",
+        "at": 1713433000008
+      },
+      {
+        "stage": "persist",
+        "ok": true,
+        "detail": "upserted",
+        "at": 1713433000009
+      }
+    ]
+  }
+}
+```
+
+### POST `/evolve/progression`
+
+Notes:
+- Strict progression endpoint alias.
+- Requires `text`; missing `text` returns `400` with `{"ok":false,"error":"Missing required field: text"}`.
+
+**Request**
+```json
+{
+  "projectId": "cortexta",
+  "text": "upgrade memory evolution progression telemetry",
+  "context": "operator-triggered daemon cycle",
+  "dryRun": true
+}
+```
+
+**Response**
+```json
+{
+  "ok": true,
+  "route": "evolve/progression",
+  "mode": "progression",
+  "projectId": "cortexta",
+  "dryRun": true,
+  "stored": true,
+  "persisted": false,
+  "action": "store",
+  "reason": "fallback-heuristic",
+  "atomId": "mem_n4yk3x8z",
+  "progression": {
+    "proposedCandidates": 1,
+    "reviewedCandidates": 1,
+    "selectedCandidateIndex": 0,
+    "selectedScore": 0.6934,
+    "merged": false,
+    "neighborCount": 3,
+    "promoted": false,
+    "archived": false,
+    "stages": [
+      {
+        "stage": "propose",
+        "ok": true,
+        "detail": "writer-produced-1-candidate(s)",
+        "at": 1713433000000
+      }
+    ]
+  }
 }
 ```
 
@@ -188,6 +346,15 @@ Notes:
   "route": "cxlink/context",
   "agent": "cli",
   "tokens": 944,
+  "memoryHealth": {
+    "projectId": "cortexta",
+    "totalRows": 4200,
+    "compactionRate": 0.81,
+    "savedPercent": 74.2,
+    "anomalyTotal": 0,
+    "status": "healthy",
+    "recommendation": "Memory quality is healthy. Keep regular ingestion and dashboard snapshots running."
+  },
   "context": "# Context\n- ...",
   "cxf": "intent: wire compaction stats into a dashboard widget\nscope: project + memory + retrieval",
   "envelope": "# Context\n- ...\n\n[CONTEXT_STATS]\ntokens=944 atoms=12 dropped=3\n\n[USER_QUERY]\nwire compaction stats into a dashboard widget"
@@ -214,6 +381,15 @@ Notes:
   "route": "cxlink/query",
   "query": "memory backfill behavior",
   "count": 1,
+  "memoryHealth": {
+    "projectId": "cortexta",
+    "totalRows": 4200,
+    "compactionRate": 0.81,
+    "savedPercent": 74.2,
+    "anomalyTotal": 0,
+    "status": "healthy",
+    "recommendation": "Memory quality is healthy. Keep regular ingestion and dashboard snapshots running."
+  },
   "results": [
     {
       "id": "code_2f8f4dbeacbd7e6bc8d9a111",
@@ -264,6 +440,15 @@ Notes:
   "query": "introduce retention alerting for compaction anomalies",
   "agent": "cli",
   "tokens": 702,
+  "memoryHealth": {
+    "projectId": "cortexta",
+    "totalRows": 4200,
+    "compactionRate": 0.81,
+    "savedPercent": 74.2,
+    "anomalyTotal": 0,
+    "status": "healthy",
+    "recommendation": "Memory quality is healthy. Keep regular ingestion and dashboard snapshots running."
+  },
   "steps": [
     {
       "id": 1,
@@ -481,6 +666,205 @@ Notes:
       "projectsWithAnomalies": 0,
       "projectsMostlyCompacted": 1
     }
+  }
+}
+```
+
+### POST `/cxlink/compaction/audit`
+
+**Request**
+```json
+{
+  "projectId": "cortexta",
+  "limit": 5000,
+  "maxIssues": 10
+}
+```
+
+**Response**
+```json
+{
+  "ok": true,
+  "route": "cxlink/compaction/audit",
+  "report": {
+    "projectId": "cortexta",
+    "scannedRows": 5000,
+    "compactedRows": 4100,
+    "plainRows": 900,
+    "validCompactedRows": 4098,
+    "anomalies": {
+      "invalidChecksum": 1,
+      "decodeError": 1,
+      "total": 2
+    },
+    "anomalyRate": 0.0005,
+    "compactionOpportunityRate": 0.18,
+    "issueSamples": [
+      {
+        "id": "cmp_integrity_anomaly_1",
+        "projectId": "cortexta",
+        "kind": "code_entity",
+        "sourceType": "manual",
+        "title": "Integrity anomaly sample",
+        "integrity": "invalid_checksum",
+        "preview": "Tampered compact row for anomaly accounting.",
+        "storedChars": 321,
+        "originalChars": 1280,
+        "savedChars": 959,
+        "lastAccessedAt": 1713431000000
+      }
+    ],
+    "recommendations": [
+      "Integrity anomalies detected. Inspect issue samples and re-ingest affected sources to restore full resurrection fidelity."
+    ]
+  }
+}
+```
+
+### POST `/cxlink/compaction/self-heal/status`
+
+**Request**
+```json
+{}
+```
+
+**Response**
+```json
+{
+  "ok": true,
+  "route": "cxlink/compaction/self-heal/status",
+  "status": {
+    "enabled": true,
+    "started": true,
+    "running": false,
+    "nextRunAt": 1713433972123,
+    "lastScheduledDelayMs": 1805421,
+    "consecutiveFailures": 0,
+    "runCount": 14,
+    "config": {
+      "enabled": true,
+      "projectId": "cortexta",
+      "intervalMs": 1800000,
+      "jitterMs": 60000,
+      "runOnStart": true,
+      "auditLimit": 5000,
+      "auditMaxIssues": 20,
+      "backfillLimit": 5000,
+      "applyEnabled": true,
+      "maxAllowedAnomalies": 0,
+      "minCompactionOpportunityRate": 0.2,
+      "minDryRunCompactedRows": 50,
+      "maxApplyRows": 2000,
+      "applyWindowStartHour": 1,
+      "applyWindowEndHour": 5,
+      "historyLimit": 50,
+      "persistHistory": true,
+      "persistedHistoryLimit": 2000,
+      "backoffEnabled": true,
+      "backoffMultiplier": 2,
+      "maxBackoffIntervalMs": 21600000,
+      "sloWindowsMinutes": [
+        60,
+        1440,
+        10080
+      ]
+    },
+    "lastRun": {
+      "runId": "selfheal_m14a2f_9",
+      "trigger": "scheduled",
+      "dryRunOnly": false,
+      "startedAt": 1713432100000,
+      "completedAt": 1713432100190,
+      "durationMs": 190,
+      "outcome": "dry-run-only",
+      "decision": {
+        "allowApply": false,
+        "applyLimit": 2000,
+        "reasons": [
+          "Compaction opportunity below threshold (0.1200 < 0.2000)."
+        ]
+      }
+    },
+    "recentRuns": [],
+    "slo": {
+      "generatedAt": 1713433972123,
+      "windows": [
+        {
+          "windowMinutes": 60,
+          "windowMs": 3600000,
+          "sinceMs": 1713430372123,
+          "total": 2,
+          "applied": 0,
+          "dryRunOnly": 2,
+          "skipped": 0,
+          "error": 0,
+          "successRate": 1,
+          "errorRate": 0,
+          "applyRate": 0
+        }
+      ]
+    }
+  }
+}
+```
+
+### POST `/cxlink/compaction/self-heal/trigger`
+
+**Request**
+```json
+{
+  "reason": "nightly-ops-check",
+  "dryRunOnly": true
+}
+```
+
+**Response**
+```json
+{
+  "ok": true,
+  "route": "cxlink/compaction/self-heal/trigger",
+  "report": {
+    "runId": "selfheal_m14a2f_a",
+    "trigger": "manual",
+    "reason": "nightly-ops-check",
+    "dryRunOnly": true,
+    "startedAt": 1713432200000,
+    "completedAt": 1713432200181,
+    "durationMs": 181,
+    "outcome": "dry-run-only",
+    "decision": {
+      "allowApply": false,
+      "applyLimit": 2000,
+      "reasons": [
+        "Manual dry-run only mode requested.",
+        "Apply mode is disabled by configuration."
+      ]
+    },
+    "audit": {
+      "scannedRows": 5000,
+      "compactedRows": 4100,
+      "plainRows": 900,
+      "anomalies": {
+        "invalidChecksum": 0,
+        "decodeError": 0,
+        "total": 0
+      },
+      "anomalyRate": 0,
+      "compactionOpportunityRate": 0.18,
+      "recommendationCount": 1
+    },
+    "dryRunBackfill": {
+      "projectId": "cortexta",
+      "dryRun": true,
+      "scanned": 5000,
+      "eligible": 900,
+      "compacted": 900,
+      "skipped": 4100,
+      "savedChars": 350000
+    }
+  },
+  "status": {
+    "runCount": 15
   }
 }
 ```

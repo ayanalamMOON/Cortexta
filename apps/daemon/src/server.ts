@@ -5,6 +5,11 @@ import { cxlinkRouter } from "./routes/cxlink";
 import { evolveRouter } from "./routes/evolve";
 import { ingestRouter } from "./routes/ingest";
 import { queryRouter } from "./routes/query";
+import {
+    getSelfHealingStatus,
+    startSelfHealingScheduler,
+    stopSelfHealingScheduler
+} from "./self-healing";
 import { startWsServer } from "./stream/ws-server";
 
 function readEnv(name: string): string | undefined {
@@ -83,7 +88,25 @@ export function createDaemonApp() {
     app.use(jsonSyntaxErrorHandler);
 
     app.get("/health", (_req: any, res: any) => {
-        res.json({ ok: true, service: "cortexa-daemon", ts: Date.now(), uptimeMs: Math.round(process.uptime() * 1000) });
+        const selfHealing = getSelfHealingStatus();
+
+        res.json({
+            ok: true,
+            service: "cortexa-daemon",
+            ts: Date.now(),
+            uptimeMs: Math.round(process.uptime() * 1000),
+            selfHealing: {
+                enabled: selfHealing.enabled,
+                started: selfHealing.started,
+                running: selfHealing.running,
+                nextRunAt: selfHealing.nextRunAt,
+                lastScheduledDelayMs: selfHealing.lastScheduledDelayMs,
+                consecutiveFailures: selfHealing.consecutiveFailures,
+                lastOutcome: selfHealing.lastRun?.outcome,
+                runCount: selfHealing.runCount,
+                slo: selfHealing.slo
+            }
+        });
     });
 
     app.use(authMiddleware);
@@ -103,6 +126,8 @@ export function startDaemon(port = readPortEnv("CORTEXA_DAEMON_PORT", 4312), wsP
         console.log(`CORTEXA daemon running on port ${port}`);
     });
 
+    startSelfHealingScheduler();
+
     let wss: ReturnType<typeof startWsServer> | null = null;
     try {
         wss = startWsServer(wsPort);
@@ -119,6 +144,8 @@ export function startDaemon(port = readPortEnv("CORTEXA_DAEMON_PORT", 4312), wsP
                 callback?.();
             }
         };
+
+        stopSelfHealingScheduler();
 
         if (wss) {
             try {

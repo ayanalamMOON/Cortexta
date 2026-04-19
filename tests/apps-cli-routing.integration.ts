@@ -17,9 +17,11 @@ function main(): void {
     assertPrimaryRoute([], "default command should route to primary CLI home");
     assertPrimaryRoute(["--help"], "--help should route to primary CLI help");
     assertPrimaryRoute(["memory", "stats"], "memory commands should route to primary CLI");
+    assertPrimaryRoute(["doctor"], "doctor should route to primary CLI");
     assertPrimaryRoute(["dashboard", "--json"], "dashboard alias should route to primary CLI");
     assertPrimaryRoute(["daemon", "status"], "daemon commands should route to primary CLI");
     assertPrimaryRoute(["ingest", "."], "ingest should route to primary CLI");
+    assertPrimaryRoute(["evolve", "upgrade", "progression"], "evolve should route to primary CLI");
     assertPrimaryRoute(["--", "memory", "stats"], "single delimiter should still route to primary CLI");
     assertPrimaryRoute(["--", "--", "memory", "stats"], "repeated delimiters should still route to primary CLI");
 

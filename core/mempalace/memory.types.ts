@@ -120,6 +120,38 @@ export interface MemoryCompactionDashboardPayload {
     };
 }
 
+export interface MemoryCompactionOpportunityOptions {
+    projectId?: string;
+    limit?: number;
+    scanLimit?: number;
+    minContentChars?: number;
+}
+
+export interface MemoryCompactionOpportunityItem {
+    id: string;
+    projectId: string;
+    kind: MemoryKind;
+    sourceType: MemorySourceType;
+    title: string;
+    sourceRef?: string;
+    lastAccessedAt: number;
+    contentChars: number;
+    estimatedStoredChars: number;
+    estimatedSavedChars: number;
+    estimatedSavedPercent: number;
+    estimatedCompressionRatio: number;
+}
+
+export interface MemoryCompactionOpportunityReport {
+    generatedAt: number;
+    projectId?: string;
+    scannedRows: number;
+    plainRows: number;
+    candidates: number;
+    totalEstimatedSavedChars: number;
+    items: MemoryCompactionOpportunityItem[];
+}
+
 export interface BackfillMemoryCompactionOptions {
     projectId?: string;
     limit?: number;
@@ -134,6 +166,39 @@ export interface BackfillMemoryCompactionResult {
     compacted: number;
     skipped: number;
     savedChars: number;
+}
+
+export interface MemoryResurrectionAuditOptions {
+    projectId?: string;
+    limit?: number;
+    maxIssues?: number;
+}
+
+export interface MemoryResurrectionAuditIssue {
+    id: string;
+    projectId: string;
+    kind: MemoryKind;
+    sourceType: MemorySourceType;
+    title: string;
+    integrity: "invalid_checksum" | "decode_error";
+    preview: string;
+    storedChars: number;
+    originalChars: number;
+    savedChars: number;
+    lastAccessedAt: number;
+}
+
+export interface MemoryResurrectionAuditReport {
+    projectId?: string;
+    scannedRows: number;
+    compactedRows: number;
+    plainRows: number;
+    validCompactedRows: number;
+    anomalies: MemoryCompactionIntegrityAnomalies;
+    anomalyRate: number;
+    compactionOpportunityRate: number;
+    issueSamples: MemoryResurrectionAuditIssue[];
+    recommendations: string[];
 }
 
 export interface ScoredMemory extends MemoryRecord {

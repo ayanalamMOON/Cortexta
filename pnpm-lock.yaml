@@ -11,9 +11,33 @@ importers:
       better-sqlite3:
         specifier: ^11.10.0
         version: 11.10.0
+      chokidar:
+        specifier: ^4.0.3
+        version: 4.0.3
+      commander:
+        specifier: ^12.1.0
+        version: 12.1.0
       express:
         specifier: ^4.21.2
         version: 4.22.1
+      node-fetch:
+        specifier: ^3.3.2
+        version: 3.3.2
+      tiktoken:
+        specifier: ^1.0.22
+        version: 1.0.22
+      tree-sitter:
+        specifier: ^0.22.4
+        version: 0.22.4
+      tree-sitter-cpp:
+        specifier: ^0.23.4
+        version: 0.23.4(tree-sitter@0.22.4)
+      tree-sitter-typescript:
+        specifier: ^0.23.2
+        version: 0.23.2(tree-sitter@0.22.4)
+      ws:
+        specifier: ^8.18.3
+        version: 8.20.0
     devDependencies:
       '@types/express':
         specifier: ^5.0.6

@@ -89,6 +89,33 @@ CREATE TABLE IF NOT EXISTS memory_compaction_snapshots (
   createdAt INTEGER
 );
 
+CREATE TABLE IF NOT EXISTS memory_ingestion_sources (
+  id TEXT PRIMARY KEY,
+  projectId TEXT,
+  sourceType TEXT,
+  sourceRef TEXT,
+  contentHash TEXT,
+  contentBytes INTEGER,
+  ingestVersion TEXT,
+  firstIngestedAt INTEGER,
+  lastIngestedAt INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS self_healing_run_history (
+  id TEXT PRIMARY KEY,
+  schedulerScope TEXT NOT NULL,
+  projectId TEXT,
+  trigger TEXT NOT NULL,
+  outcome TEXT NOT NULL,
+  dryRunOnly INTEGER NOT NULL DEFAULT 0,
+  reason TEXT,
+  startedAt INTEGER NOT NULL,
+  completedAt INTEGER NOT NULL,
+  durationMs INTEGER NOT NULL,
+  payload TEXT NOT NULL,
+  createdAt INTEGER NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_memories_project ON memories(projectId);
 CREATE INDEX IF NOT EXISTS idx_memories_kind ON memories(kind);
 CREATE INDEX IF NOT EXISTS idx_memories_last_accessed ON memories(lastAccessedAt);
@@ -99,3 +126,7 @@ CREATE INDEX IF NOT EXISTS idx_graph_edges_project ON graph_edges(projectId);
 CREATE INDEX IF NOT EXISTS idx_graph_edges_from_to ON graph_edges(fromNode, toNode);
 CREATE INDEX IF NOT EXISTS idx_compaction_snapshots_created_at ON memory_compaction_snapshots(createdAt);
 CREATE INDEX IF NOT EXISTS idx_compaction_snapshots_project_created_at ON memory_compaction_snapshots(projectId, createdAt);
+CREATE INDEX IF NOT EXISTS idx_ingestion_sources_project_type ON memory_ingestion_sources(projectId, sourceType);
+CREATE INDEX IF NOT EXISTS idx_ingestion_sources_project_ref ON memory_ingestion_sources(projectId, sourceType, sourceRef);
+CREATE INDEX IF NOT EXISTS idx_self_healing_history_scope_started ON self_healing_run_history(schedulerScope, startedAt DESC);
+CREATE INDEX IF NOT EXISTS idx_self_healing_history_scope_outcome_started ON self_healing_run_history(schedulerScope, outcome, startedAt DESC);

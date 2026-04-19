@@ -21,7 +21,15 @@ async function main(): Promise<void> {
         };
     };
 
-    const { upsertMemory, getMemoryById, searchMemories, getMemoryCompactionStats, getMemoryCompactionDashboard, backfillMemoryCompaction } = require("../core/mempalace/memory.service") as {
+    const {
+        upsertMemory,
+        getMemoryById,
+        searchMemories,
+        getMemoryCompactionStats,
+        getMemoryCompactionDashboard,
+        backfillMemoryCompaction,
+        auditMemoryResurrection
+    } = require("../core/mempalace/memory.service") as {
         upsertMemory: (input: Record<string, unknown>) => Promise<any>;
         getMemoryById: (id: string) => any;
         searchMemories: (query: string, options?: Record<string, unknown>) => Promise<any[]>;
@@ -64,6 +72,17 @@ async function main(): Promise<void> {
             compacted: number;
             skipped: number;
             savedChars: number;
+        };
+        auditMemoryResurrection: (options?: Record<string, unknown>) => {
+            scannedRows: number;
+            compactedRows: number;
+            plainRows: number;
+            validCompactedRows: number;
+            anomalies: { invalidChecksum: number; decodeError: number; total: number };
+            anomalyRate: number;
+            compactionOpportunityRate: number;
+            issueSamples: Array<{ id: string; integrity: string; preview: string }>;
+            recommendations: string[];
         };
     };
 
@@ -233,6 +252,20 @@ async function main(): Promise<void> {
         null,
         null
     );
+
+    const audit = auditMemoryResurrection({
+        projectId,
+        limit: 200,
+        maxIssues: 5
+    });
+
+    assert.ok(audit.scannedRows >= 3, "audit should scan project rows");
+    assert.ok(audit.compactedRows >= 3, "audit should classify compact rows");
+    assert.ok(audit.anomalies.total >= 1, "audit should report integrity anomalies");
+    assert.ok(audit.anomalyRate > 0, "audit should expose non-zero anomaly rate");
+    assert.ok(audit.issueSamples.length >= 1, "audit should include issue samples");
+    assert.equal(audit.issueSamples[0]?.id, anomalyRowId, "audit should include inserted anomaly row");
+    assert.ok(audit.recommendations.length >= 1, "audit should include recommendations");
 
     const dashboard = getMemoryCompactionDashboard({
         projectId,

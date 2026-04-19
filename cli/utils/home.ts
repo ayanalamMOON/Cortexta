@@ -82,6 +82,7 @@ export function renderCliHome(options: CliHomeOptions = {}): string {
     lines.push(`  ${palette.success("$ pnpm run cortexa -- ingest . --project-id=my-project")}`);
     lines.push(`  ${palette.success("$ pnpm run cortexa -- query \"how did we solve retry jitter?\"")}`);
     lines.push(`  ${palette.success("$ pnpm run cortexa -- context \"prepare implementation plan\"")}`);
+    lines.push(`  ${palette.success("$ pnpm run cortexa -- evolve \"upgrade progression telemetry\" --project-id=my-project --dry-run")}`);
     lines.push("", palette.bold("Core commands"));
 
     lines.push(
@@ -93,6 +94,7 @@ export function renderCliHome(options: CliHomeOptions = {}): string {
             },
             { command: "query <text>", description: "Run hybrid retrieval over memories." },
             { command: "context <text>", description: "Compile a token-bounded context payload." },
+            { command: "evolve <text> [options]", description: "Run progression evolution and emit stage telemetry." },
             { command: "daemon <start|stop|status>", description: "Control local daemon API runtime." }
         ])
     );
@@ -111,6 +113,14 @@ export function renderCliHome(options: CliHomeOptions = {}): string {
                 { command: "memory resurrect <id> [--full]", description: "Read restored compact content." },
                 { command: "memory delete <id>", description: "Delete one memory item." },
                 { command: "memory stats [--project-id=<id>]", description: "Compaction and integrity stats." },
+                {
+                    command: "memory opportunities [--project-id=<id>]",
+                    description: "Top estimated compaction savings from plain rows."
+                },
+                {
+                    command: "memory audit [--project-id=<id>] [--limit=<n>]",
+                    description: "Resurrection integrity audit + repair guidance."
+                },
                 {
                     command: "memory backfill [--apply] [--limit=<n>]",
                     description: "Dry-run/apply compaction backfill."

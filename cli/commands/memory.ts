@@ -1,10 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import {
+    auditMemoryResurrection,
     backfillMemoryCompaction,
     deleteMemory,
     getMemoryById,
     getMemoryCompactionDashboard,
+    getMemoryCompactionOpportunities,
     getMemoryCompactionStats,
     listMemories,
     searchMemories
@@ -47,7 +49,7 @@ function summarizeContent(content: string, full: boolean): string {
 
 function printMemoryUsage(): void {
     logger.warn(
-        "Unknown memory action. Use: list [projectId] [--limit] | search <query> [--top-k] [--min-score] [--project-id] | get <id> [--full] | resurrect <id> [--full] | delete <id> | stats [--project-id] | backfill [--apply] [--project-id] [--limit] | dashboard [--json] [--project-id]"
+        "Unknown memory action. Use: list [projectId] [--limit] | search <query> [--top-k] [--min-score] [--project-id] | get <id> [--full] | resurrect <id> [--full] | delete <id> | stats [--project-id] | opportunities [--project-id] [--limit] [--scan-limit] [--min-content-chars] [--json] | audit [--project-id] [--limit] [--max-issues] [--json] | backfill [--apply] [--project-id] [--limit] | dashboard [--json] [--project-id]"
     );
 }
 
@@ -154,6 +156,97 @@ export async function memoryCommand(action: string, cliArgs: string[] = []): Pro
         logger.info(
             `integrity anomalies total=${formatNumber(stats.integrityAnomalies.total)} invalidChecksum=${formatNumber(stats.integrityAnomalies.invalidChecksum)} decodeError=${formatNumber(stats.integrityAnomalies.decodeError)}`
         );
+        return;
+    }
+
+    if (action === "audit") {
+        const positionalProjectId = positionals[0]?.trim() || undefined;
+        const projectId = readStringOption(parsed, ["project-id", "projectId"]) ?? positionalProjectId;
+        const limit = clampInteger(readNumberOption(parsed, ["limit"]), 5000, 1, 50_000);
+        const maxIssues = clampInteger(readNumberOption(parsed, ["max-issues", "maxIssues"]), 10, 0, 100);
+        const jsonMode = hasFlag(parsed, ["json"]) || readStringOption(parsed, ["format"]) === "json";
+
+        const report = auditMemoryResurrection({
+            projectId,
+            limit,
+            maxIssues
+        });
+
+        if (jsonMode) {
+            logger.info(JSON.stringify(report, null, 2));
+            return;
+        }
+
+        logger.info(`Resurrection audit project=${projectId ?? "all"} scanned=${formatNumber(report.scannedRows)} limit=${limit}`);
+        logger.info(
+            `rows compacted=${formatNumber(report.compactedRows)} validCompacted=${formatNumber(report.validCompactedRows)} plain=${formatNumber(report.plainRows)} compactionOpportunity=${formatPercent(report.compactionOpportunityRate * 100)}`
+        );
+        logger.info(
+            `integrity anomalies total=${formatNumber(report.anomalies.total)} invalidChecksum=${formatNumber(report.anomalies.invalidChecksum)} decodeError=${formatNumber(report.anomalies.decodeError)} anomalyRate=${formatPercent(report.anomalyRate * 100)}`
+        );
+
+        if (report.issueSamples.length > 0) {
+            logger.info(`issue-samples (${report.issueSamples.length}):`);
+            report.issueSamples.forEach((issue, index) => {
+                logger.info(
+                    `${index + 1}. ${issue.id} [${issue.integrity}] project=${issue.projectId} source=${issue.sourceType} kind=${issue.kind} title=${issue.title}`
+                );
+                logger.info(`   preview: ${issue.preview}`);
+            });
+        }
+
+        if (report.recommendations.length > 0) {
+            logger.info("recommendations:");
+            report.recommendations.forEach((recommendation, index) => {
+                logger.info(`  ${index + 1}. ${recommendation}`);
+            });
+        }
+
+        return;
+    }
+
+    if (action === "opportunities") {
+        const positionalProjectId = positionals[0]?.trim() || undefined;
+        const projectId = readStringOption(parsed, ["project-id", "projectId"]) ?? positionalProjectId;
+        const limit = clampInteger(readNumberOption(parsed, ["limit"]), 20, 1, 500);
+        const scanLimit = clampInteger(readNumberOption(parsed, ["scan-limit", "scanLimit"]), 2000, 1, 50_000);
+        const minContentChars = clampInteger(
+            readNumberOption(parsed, ["min-content-chars", "minContentChars"]),
+            220,
+            64,
+            20_000
+        );
+        const jsonMode = hasFlag(parsed, ["json"]) || readStringOption(parsed, ["format"]) === "json";
+
+        const report = getMemoryCompactionOpportunities({
+            projectId,
+            limit,
+            scanLimit,
+            minContentChars
+        });
+
+        if (jsonMode) {
+            logger.info(JSON.stringify(report, null, 2));
+            return;
+        }
+
+        logger.info(
+            `Compaction opportunities project=${projectId ?? "all"} scanned=${formatNumber(report.scannedRows)} plainRows=${formatNumber(report.plainRows)} candidates=${formatNumber(report.candidates)} totalEstimatedSavedChars=${formatNumber(report.totalEstimatedSavedChars)}`
+        );
+
+        if (report.items.length === 0) {
+            logger.info("No compaction opportunities found for current thresholds.");
+            return;
+        }
+
+        report.items.forEach((item, index) => {
+            logger.info(
+                `${index + 1}. ${item.id} [${item.kind}] saved=${formatNumber(item.estimatedSavedChars)} (${formatPercent(item.estimatedSavedPercent)}) ratio=${item.estimatedCompressionRatio.toFixed(4)} chars=${formatNumber(item.contentChars)}->${formatNumber(item.estimatedStoredChars)}`
+            );
+            logger.info(`   project=${item.projectId} source=${item.sourceType} ref=${item.sourceRef ?? "n/a"}`);
+            logger.info(`   title: ${item.title}`);
+        });
+
         return;
     }
 

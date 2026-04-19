@@ -16,6 +16,6 @@ export function startDaemon(
 
 const shouldAutoStart = readEnv("CORTEXA_DAEMON_AUTOSTART") !== "0";
 
-if (shouldAutoStart && (globalThis as { require?: { main?: unknown }; module?: unknown }).require?.main === (globalThis as { module?: unknown }).module) {
+if (shouldAutoStart && require.main === module) {
     startDaemon();
 }

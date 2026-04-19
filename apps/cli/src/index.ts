@@ -22,10 +22,12 @@ const PRIMARY_CLI_COMMANDS = new Set([
     "help",
     "-h",
     "--help",
+    "doctor",
     "init",
     "ingest",
     "query",
     "context",
+    "evolve",
     "daemon",
     "memory",
     "dashboard"

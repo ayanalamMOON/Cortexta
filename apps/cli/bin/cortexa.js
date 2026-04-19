@@ -3,7 +3,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
-const distEntrypoint = path.resolve(__dirname, "../../dist/apps/cli/src/index.js");
+const distEntrypoint = path.resolve(__dirname, "../../../dist/apps/cli/src/index.js");
 if (fs.existsSync(distEntrypoint)) {
     require(distEntrypoint);
     process.exit(0);

@@ -1,7 +1,8 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { upsertMemory } from "../mempalace/memory.service";
+import { connectSqlite, initializeSqlite } from "../../storage/sqlite/db";
+import { deleteMemoriesByIds, upsertMemory } from "../mempalace/memory.service";
 import { parseCode } from "./code.parser";
 import { parseCopilotSession } from "./copilot.parser";
 
@@ -13,13 +14,22 @@ export interface IngestInput {
     maxFiles?: number;
     maxChatFiles?: number;
     chatSearchRoots?: string[];
+    skipUnchanged?: boolean;
 }
 
 export interface IngestionResult {
     filesScanned: number;
+    codeFilesSkippedUnchanged: number;
+    chatFilesScanned: number;
+    chatFilesSkippedUnchanged: number;
     codeChunks: number;
     chatTurns: number;
     memoriesStored: number;
+    staleMemoriesRemoved: number;
+    staleCodeMemoriesRemoved: number;
+    staleChatMemoriesRemoved: number;
+    skipUnchanged: boolean;
+    ingestVersion: string;
     errors: string[];
 }
 
@@ -43,6 +53,19 @@ const CODE_EXTENSIONS = new Set([
 const DEFAULT_MAX_CHUNK_CHARS = 1400;
 const DEFAULT_MAX_FILE_BYTES = 768 * 1024;
 const DEFAULT_MAX_CHAT_FILES = 400;
+const DEFAULT_SKIP_UNCHANGED = true;
+const INGEST_VERSION = "ingest-v2";
+
+type IngestionSourceType = "code" | "chat";
+type IngestionMemoryKind = "code_entity" | "chat_turn";
+
+interface IngestionFingerprintRow {
+    contentHash?: unknown;
+    ingestVersion?: unknown;
+}
+
+const db = connectSqlite();
+initializeSqlite(db);
 
 function readEnv(name: string): string | undefined {
     return (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.[name];
@@ -76,6 +99,130 @@ function stableId(prefix: string, parts: Array<string | number | undefined>): st
         .slice(0, 24);
 
     return `${prefix}_${hash}`;
+}
+
+function contentHash(text: string): string {
+    return crypto.createHash("sha1").update(text).digest("hex");
+}
+
+function sourceFingerprintId(projectId: string, sourceType: IngestionSourceType, sourceRef: string): string {
+    return stableId("ingest_source", [projectId, sourceType, sourceRef]);
+}
+
+function getSourceFingerprint(
+    projectId: string,
+    sourceType: IngestionSourceType,
+    sourceRef: string
+): IngestionFingerprintRow | null {
+    const id = sourceFingerprintId(projectId, sourceType, sourceRef);
+    const row = db
+        .prepare(
+            `
+            SELECT contentHash, ingestVersion
+            FROM memory_ingestion_sources
+            WHERE id = ?
+          `
+        )
+        .get<IngestionFingerprintRow>(id);
+
+    return row ?? null;
+}
+
+function upsertSourceFingerprint(params: {
+    projectId: string;
+    sourceType: IngestionSourceType;
+    sourceRef: string;
+    sourceContentHash: string;
+    contentBytes: number;
+    ingestVersion: string;
+    now: number;
+}): void {
+    const id = sourceFingerprintId(params.projectId, params.sourceType, params.sourceRef);
+
+    db.prepare(
+        `
+        INSERT INTO memory_ingestion_sources (
+            id,
+            projectId,
+            sourceType,
+            sourceRef,
+            contentHash,
+            contentBytes,
+            ingestVersion,
+            firstIngestedAt,
+            lastIngestedAt
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+            contentHash = excluded.contentHash,
+            contentBytes = excluded.contentBytes,
+            ingestVersion = excluded.ingestVersion,
+            lastIngestedAt = excluded.lastIngestedAt
+      `
+    ).run(
+        id,
+        params.projectId,
+        params.sourceType,
+        params.sourceRef,
+        params.sourceContentHash,
+        params.contentBytes,
+        params.ingestVersion,
+        params.now,
+        params.now
+    );
+}
+
+function shouldSkipUnchangedSource(params: {
+    projectId: string;
+    sourceType: IngestionSourceType;
+    sourceRef: string;
+    sourceContentHash: string;
+    ingestVersion: string;
+}): boolean {
+    const existing = getSourceFingerprint(params.projectId, params.sourceType, params.sourceRef);
+    if (!existing) {
+        return false;
+    }
+
+    return (
+        String(existing.contentHash ?? "") === params.sourceContentHash &&
+        String(existing.ingestVersion ?? "") === params.ingestVersion
+    );
+}
+
+function listExistingSourceMemoryIds(
+    projectId: string,
+    sourceRef: string,
+    kind: IngestionMemoryKind
+): string[] {
+    const rows = db
+        .prepare(
+            `
+            SELECT id
+            FROM memories
+            WHERE projectId = ?
+              AND sourceRef = ?
+              AND kind = ?
+          `
+        )
+        .all<Record<string, unknown>>(projectId, sourceRef, kind);
+
+    return rows.map((row) => String(row.id ?? "")).filter(Boolean);
+}
+
+async function removeStaleSourceMemories(
+    existingIds: string[],
+    currentIds: Set<string>
+): Promise<number> {
+    if (existingIds.length === 0) {
+        return 0;
+    }
+
+    const staleIds = existingIds.filter((id) => !currentIds.has(id));
+    if (staleIds.length === 0) {
+        return 0;
+    }
+
+    return deleteMemoriesByIds(staleIds);
 }
 
 function splitByMaxChars(content: string, maxChars: number): string[] {
@@ -245,8 +392,8 @@ function discoverChatSessionFiles(
     return [...discovered].sort((a, b) => a.localeCompare(b));
 }
 
-function readChatSessionFile(chatFile: string): unknown {
-    const raw = fs.readFileSync(chatFile, "utf8");
+function readChatSessionFile(chatFile: string, rawOverride?: string): unknown {
+    const raw = rawOverride ?? fs.readFileSync(chatFile, "utf8");
 
     if (path.extname(chatFile).toLowerCase() === ".jsonl") {
         const events: unknown[] = [];
@@ -281,12 +428,21 @@ export async function runIngestion(input: IngestInput): Promise<IngestionResult>
     const maxFiles = toNonNegativeInteger(input.maxFiles) ?? Number.POSITIVE_INFINITY;
     const maxFileBytes = toPositiveInteger(readEnv("CORTEXA_INGEST_MAX_FILE_BYTES")) ?? DEFAULT_MAX_FILE_BYTES;
     const maxChatFiles = toPositiveInteger(input.maxChatFiles) ?? DEFAULT_MAX_CHAT_FILES;
+    const skipUnchanged = input.skipUnchanged !== false ? DEFAULT_SKIP_UNCHANGED : false;
 
     const result: IngestionResult = {
         filesScanned: 0,
+        codeFilesSkippedUnchanged: 0,
+        chatFilesScanned: 0,
+        chatFilesSkippedUnchanged: 0,
         codeChunks: 0,
         chatTurns: 0,
         memoriesStored: 0,
+        staleMemoriesRemoved: 0,
+        staleCodeMemoriesRemoved: 0,
+        staleChatMemoriesRemoved: 0,
+        skipUnchanged,
+        ingestVersion: INGEST_VERSION,
         errors: []
     };
 
@@ -302,8 +458,31 @@ export async function runIngestion(input: IngestInput): Promise<IngestionResult>
             }
 
             const source = fs.readFileSync(filePath, "utf8");
-            const parsed = parseCode(filePath, source);
             const sourceRef = toSourceRef(projectPath, filePath);
+            const sourceContentHash = contentHash([
+                INGEST_VERSION,
+                "code",
+                `maxChunkChars:${maxChunkChars}`,
+                source
+            ].join("|"));
+
+            if (
+                skipUnchanged &&
+                shouldSkipUnchangedSource({
+                    projectId,
+                    sourceType: "code",
+                    sourceRef,
+                    sourceContentHash,
+                    ingestVersion: INGEST_VERSION
+                })
+            ) {
+                result.codeFilesSkippedUnchanged += 1;
+                continue;
+            }
+
+            const parsed = parseCode(filePath, source);
+            const existingSourceMemoryIds = listExistingSourceMemoryIds(projectId, sourceRef, "code_entity");
+            const currentSourceMemoryIds = new Set<string>();
 
             for (let chunkIndex = 0; chunkIndex < parsed.chunks.length; chunkIndex += 1) {
                 const chunk = parsed.chunks[chunkIndex];
@@ -320,18 +499,19 @@ export async function runIngestion(input: IngestInput): Promise<IngestionResult>
                         segmentParts.length > 1
                             ? `${chunk.summary}; segment=${segmentIndex + 1}/${segmentParts.length}`
                             : chunk.summary;
+                    const memoryId = stableId("code", [
+                        projectId,
+                        sourceRef,
+                        chunkIndex,
+                        segmentIndex,
+                        segmentedTitle,
+                        segment
+                    ]);
 
                     result.codeChunks += 1;
 
                     await upsertMemory({
-                        id: stableId("code", [
-                            projectId,
-                            sourceRef,
-                            chunkIndex,
-                            segmentIndex,
-                            segmentedTitle,
-                            segment
-                        ]),
+                        id: memoryId,
                         projectId,
                         kind: "code_entity",
                         sourceType: "code",
@@ -345,8 +525,23 @@ export async function runIngestion(input: IngestInput): Promise<IngestionResult>
                     });
 
                     result.memoriesStored += 1;
+                    currentSourceMemoryIds.add(memoryId);
                 }
             }
+
+            const staleCodeRemoved = await removeStaleSourceMemories(existingSourceMemoryIds, currentSourceMemoryIds);
+            result.staleCodeMemoriesRemoved += staleCodeRemoved;
+            result.staleMemoriesRemoved += staleCodeRemoved;
+
+            upsertSourceFingerprint({
+                projectId,
+                sourceType: "code",
+                sourceRef,
+                sourceContentHash,
+                contentBytes: Buffer.byteLength(source, "utf8"),
+                ingestVersion: INGEST_VERSION,
+                now: Date.now()
+            });
         } catch (error) {
             result.errors.push(`code:${filePath}:${error instanceof Error ? error.message : String(error)}`);
         }
@@ -355,10 +550,35 @@ export async function runIngestion(input: IngestInput): Promise<IngestionResult>
     if (input.includeChats) {
         const chatFiles = discoverChatSessionFiles(projectPath, input.chatSearchRoots ?? [], maxChatFiles);
         for (const chatFile of chatFiles) {
+            result.chatFilesScanned += 1;
+
             try {
-                const raw = readChatSessionFile(chatFile);
-                const turns = parseCopilotSession(raw);
+                const chatRawText = fs.readFileSync(chatFile, "utf8");
                 const sourceRef = toSourceRef(projectPath, chatFile);
+                const sourceContentHash = contentHash([
+                    INGEST_VERSION,
+                    "chat",
+                    chatRawText
+                ].join("|"));
+
+                if (
+                    skipUnchanged &&
+                    shouldSkipUnchangedSource({
+                        projectId,
+                        sourceType: "chat",
+                        sourceRef,
+                        sourceContentHash,
+                        ingestVersion: INGEST_VERSION
+                    })
+                ) {
+                    result.chatFilesSkippedUnchanged += 1;
+                    continue;
+                }
+
+                const raw = readChatSessionFile(chatFile, chatRawText);
+                const turns = parseCopilotSession(raw);
+                const existingSourceMemoryIds = listExistingSourceMemoryIds(projectId, sourceRef, "chat_turn");
+                const currentSourceMemoryIds = new Set<string>();
 
                 for (let turnIndex = 0; turnIndex < turns.length; turnIndex += 1) {
                     const turn = turns[turnIndex];
@@ -376,9 +596,10 @@ export async function runIngestion(input: IngestInput): Promise<IngestionResult>
                     result.chatTurns += 1;
 
                     const fileTags = (turn.files ?? []).slice(0, 25).map((file) => `file:${normalizeSlashes(String(file))}`);
+                    const memoryId = stableId("chat", [projectId, sourceRef, turnIndex, turn.timestamp, prompt, response]);
 
                     await upsertMemory({
-                        id: stableId("chat", [projectId, sourceRef, turnIndex, turn.timestamp, prompt, response]),
+                        id: memoryId,
                         projectId,
                         kind: "chat_turn",
                         sourceType: "chat",
@@ -392,7 +613,22 @@ export async function runIngestion(input: IngestInput): Promise<IngestionResult>
                     });
 
                     result.memoriesStored += 1;
+                    currentSourceMemoryIds.add(memoryId);
                 }
+
+                const staleChatRemoved = await removeStaleSourceMemories(existingSourceMemoryIds, currentSourceMemoryIds);
+                result.staleChatMemoriesRemoved += staleChatRemoved;
+                result.staleMemoriesRemoved += staleChatRemoved;
+
+                upsertSourceFingerprint({
+                    projectId,
+                    sourceType: "chat",
+                    sourceRef,
+                    sourceContentHash,
+                    contentBytes: Buffer.byteLength(chatRawText, "utf8"),
+                    ingestVersion: INGEST_VERSION,
+                    now: Date.now()
+                });
             } catch (error) {
                 result.errors.push(`chat:${chatFile}:${error instanceof Error ? error.message : String(error)}`);
             }

@@ -1,0 +1,35 @@
+services:
+  cortexa:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: cortexa:latest
+    container_name: cortexa-daemon
+    environment:
+      CORTEXA_DAEMON_PORT: "4312"
+      CORTEXA_WS_PORT: "4321"
+      CORTEXA_DB_PATH: /var/lib/cortexa/cortexa.db
+      CORTEXA_VECTOR_PROVIDER: qdrant
+      CORTEXA_VECTOR_URL: http://qdrant:6333
+      CORTEXA_DAEMON_TOKEN: replace-with-secure-token
+    ports:
+      - "4312:4312"
+      - "4321:4321"
+    volumes:
+      - cortexa-data:/var/lib/cortexa
+    depends_on:
+      - qdrant
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:v1.13.4
+    container_name: cortexa-qdrant
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    restart: unless-stopped
+
+volumes:
+  cortexa-data:
+  qdrant-data:
