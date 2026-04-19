@@ -13,6 +13,21 @@ This guide covers production-friendly container workflows for CORTEXA daemon run
 - healthcheck on `/health`
 - optional Docker Compose setup with Qdrant
 
+## Deployment topology
+
+```mermaid
+flowchart LR
+  CLIENT[Local client or service] --> DAEMON[CORTEXA daemon container]
+  DAEMON --> DB[(SQLite volume)]
+  DAEMON --> VECTOR[(Vector provider: memory or Qdrant)]
+```
+
+| Profile          | Components                                        | Best for                                |
+| ---------------- | ------------------------------------------------- | --------------------------------------- |
+| Single container | daemon + SQLite volume + `memory` vector provider | local validation and lightweight demos  |
+| Compose stack    | daemon + SQLite volume + Qdrant                   | team reproducibility and parity testing |
+| Hardened runtime | compose stack + TLS proxy + secrets manager       | production-like deployment posture      |
+
 ---
 
 ## Build image

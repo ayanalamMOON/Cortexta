@@ -19,6 +19,25 @@ CORTEXA includes a full **stdio MCP transport** for use in MCP-compatible client
 - Tool bridge into daemon routes (`/cxlink/*`, compaction, self-healing, ingest, evolve)
 - MCP context codec tooling (`cortexa_encode_mcp_ctx`, `cortexa_decode_mcp_ctx`)
 
+## Transport flow
+
+```mermaid
+flowchart LR
+  CLIENT[MCP client] --> STDIO[JSON-RPC over stdio]
+  STDIO --> SERVER[CORTEXA MCP server]
+  SERVER --> DAEMON[Daemon HTTP routes]
+  DAEMON --> PAYLOAD[Tool result payload]
+  PAYLOAD --> CLIENT
+```
+
+| Tool family            | Examples                                           | Mutation                                 |
+| ---------------------- | -------------------------------------------------- | ---------------------------------------- |
+| Core retrieval         | `cortexa_query`, `cortexa_context`, `cortexa_plan` | no                                       |
+| Proactive and temporal | `cortexa_context_suggest`, `cortexa_temporal_*`    | no                                       |
+| Agent surface          | `cortexa_agent_list`, `cortexa_agent_run`          | list: no, run: yes                       |
+| Branch controls        | `cortexa_branch_*`                                 | list: no, create/merge/switch: yes       |
+| Compaction controls    | `cortexa_compaction_*`, `cortexa_self_heal_*`      | stats/dashboard/status: no, trigger: yes |
+
 ---
 
 ## Start the MCP server
@@ -44,6 +63,7 @@ Read-only tools:
 - `cortexa_context`
 - `cortexa_plan`
 - `cortexa_context_suggest`
+- `cortexa_agent_list`
 - `cortexa_temporal_query`
 - `cortexa_temporal_diff`
 - `cortexa_branch_list`
@@ -57,6 +77,7 @@ Mutation tools (disabled by default):
 
 - `cortexa_ingest`
 - `cortexa_evolve`
+- `cortexa_agent_run`
 - `cortexa_branch_create`
 - `cortexa_branch_merge`
 - `cortexa_branch_switch`
@@ -73,6 +94,7 @@ Enable mutations with:
 - `cortexa_context_suggest` supports `warmup`, `topK`, and `maxTokens` for proactive pre-compilation.
 - `cortexa_temporal_query` requires `query`, `projectId`, and `asOf`.
 - `cortexa_temporal_diff` requires `projectId`, `from`, and `to`.
+- `cortexa_agent_run` requires `agent` + `text` and supports `projectId`, `branch`, `context`, `dryRun` (defaults to `true`), `topK`, `maxChars`, and `existingSnippets`.
 
 ---
 

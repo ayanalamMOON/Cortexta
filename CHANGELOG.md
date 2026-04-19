@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Release map
+
+```mermaid
+flowchart LR
+	A[0.1.0\nInitial alpha] --> B[0.1.2\nBranch, temporal, observability, MCP]
+	B --> C[Unreleased\nAutomation and polish]
+```
+
+| Version      | Date        | Focus                                                            |
+| ------------ | ----------- | ---------------------------------------------------------------- |
+| `0.1.0`      | 2026-04-19  | Initial public alpha runtime and CX-LINK foundation              |
+| `0.1.2`      | 2026-04-19  | Branch/temporal workflows, observability, MCP, proactive context |
+| `Unreleased` | In progress | Release automation and documentation sync                        |
+
 ## [Unreleased]
 
 ### Changed

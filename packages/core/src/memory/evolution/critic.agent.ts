@@ -1,3 +1,4 @@
+import { criticAgent as legacyCriticAgent } from "../../../../../agents/critic.agent";
 import type { LLMClient } from "../../types/llm";
 
 export interface CriticOutput {
@@ -48,17 +49,22 @@ function computeFallbackReview(input: {
     const clarity = clamp01(lengthScore * 0.7 + punctuationScore * 0.3);
     const score = clamp01(novelty * 0.62 + clarity * 0.38);
 
+    const legacy = legacyCriticAgent(body, existing);
+    const blendedNovelty = clamp01((novelty + legacy.novelty) / 2);
+    const blendedClarity = clamp01((clarity + legacy.clarity) / 2);
+    const blendedScore = clamp01((score + legacy.score) / 2);
+
     const action: CriticOutput["action"] =
-        score >= 0.8 ? "merge" : score >= 0.6 ? "store" : score >= 0.42 ? "compress" : "reject";
+        blendedScore >= 0.8 ? "merge" : blendedScore >= 0.6 ? "store" : blendedScore >= 0.42 ? "compress" : "reject";
 
     return {
         accepted: action !== "reject",
-        score,
-        novelty,
-        redundancy,
-        clarity,
+        score: blendedScore,
+        novelty: blendedNovelty,
+        redundancy: clamp01((redundancy + (1 - legacy.novelty)) / 2),
+        clarity: blendedClarity,
         action,
-        reason: action === "reject" ? "low-signal" : "fallback-heuristic",
+        reason: action === "reject" ? legacy.reason || "low-signal" : "fallback-heuristic",
         mergeKey: action === "merge" ? title.toLowerCase().replace(/[^a-z0-9]+/g, "-") : undefined
     };
 }

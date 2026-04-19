@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -80,4 +81,31 @@ jobs:
           pnpm run test:ingestion
           pnpm run test:compaction
           pnpm run test:self-healing
+          pnpm run test:session-resurrection
           pnpm run test:daemons
+
+  agents-realistic-gate:
+    name: Agents Realistic Gate (Node 22)
+    runs-on: ubuntu-latest
+    needs: integration
+    if: github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'ci:agents-realistic')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Realistic agents integration gate
+        run: pnpm run test:agents-realistic

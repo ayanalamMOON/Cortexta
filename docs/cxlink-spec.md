@@ -14,6 +14,27 @@ It standardizes how query intent, retrieved memory evidence, constraints, and to
 - temporal (as-of) memory reconstruction and change introspection
 - proactive intent hints for pre-tuned retrieval envelopes
 
+## Protocol overview
+
+```mermaid
+flowchart LR
+  CLIENT[CLI, daemon client, MCP client] --> ROUTE[CX-LINK route]
+  ROUTE --> RETRIEVE[Retrieval and ranking]
+  RETRIEVE --> FORMAT[CxF and prompt envelope]
+  ROUTE --> HEALTH[Memory health signal]
+  ROUTE --> EVENTS[Optional stream event]
+```
+
+## Route families at a glance
+
+| Family                | Routes                                             | Primary output                                                  |
+| --------------------- | -------------------------------------------------- | --------------------------------------------------------------- |
+| Context/query/plan    | `/cxlink/context`, `/cxlink/query`, `/cxlink/plan` | CxF, envelope, ranked results, `memoryHealth`                   |
+| Agent orchestration   | `/cxlink/agent/list`, `/cxlink/agent/run`          | agent catalog and run output + `agentStatus` event              |
+| Branch + temporal     | `/cxlink/branch/*`, `/cxlink/temporal/*`           | lineage control, historical retrieval, timeline deltas          |
+| Compaction operations | `/cxlink/compaction/*`                             | stats, audit, dashboard, self-heal state and trigger            |
+| Session resurrection  | `/cxlink/session-resurrection/*`                   | scheduler status, manual run, `sessionResurrectionStatus` event |
+
 ## Core concepts
 
 ### 1) CxF (Context Exchange Format)
@@ -83,7 +104,23 @@ Daemon query/context flows can return proactive intent suggestions with tuned re
 
 - inferred intent category + confidence
 - recommended `topK`, `maxTokens`, `scope`, and `constraints`
-- optional daemon stream events for suggestion and branch-switch notifications
+- optional daemon stream events for suggestion and branch-switch notifications (`contextSuggested`, `branchSwitched`)
+
+### 7) Agent orchestration surface
+
+CX-LINK now exposes a unified agent catalog and execution layer to align runtime behavior with CORTEXA blueprint roles:
+
+- list integrated agents (`writer`, `critic`, `compressor`, `planner`, `refactor`, evolution roles, and `multi_agent_loop`)
+- execute a selected agent with branch/project scoped retrieval context
+- emit stream lifecycle events (`agentStatus`) for run completion telemetry
+
+### 8) Session-resurrection operations
+
+CX-LINK exposes scheduler controls for automatic ingestion, graph indexing, and resurrection health checks:
+
+- inspect scheduler state and SLO windows (`POST /cxlink/session-resurrection/status`)
+- trigger an immediate manual run (`POST /cxlink/session-resurrection/trigger`)
+- consume emitted stream lifecycle events (`sessionResurrectionStatus`) for run visibility
 
 ## Route surface
 
@@ -92,12 +129,22 @@ CX-LINK HTTP routes:
 - `POST /cxlink/context` → context rendering + CxF + envelope
 - `POST /cxlink/query` → ranked memory results + CxF + envelope
 - `POST /cxlink/plan` → actionable plan steps + CxF + envelope
+- `POST /cxlink/agent/list` → list integrated agent descriptors
+- `POST /cxlink/agent/run` → execute agent and return structured output
 - `POST /cxlink/branch/list` → list project memory branches
 - `POST /cxlink/branch/create` → create branch from parent branch
 - `POST /cxlink/branch/merge` → merge source branch changes into target branch
-- `POST /cxlink/branch/switch` → emit branch context switch event
+- `POST /cxlink/branch/switch` → emit `branchSwitched` stream event
 - `POST /cxlink/temporal/query` → ranked retrieval at historical timestamp (`asOf` required)
 - `POST /cxlink/temporal/diff` → timeline delta between `from` and `to`
+- `POST /cxlink/compaction/stats` → current compaction posture summary
+- `POST /cxlink/compaction/backfill` → dry-run/apply compaction backfill
+- `POST /cxlink/compaction/dashboard` → compaction trend and risk dashboard payload
+- `POST /cxlink/compaction/audit` → integrity anomaly audit + recommendations
+- `POST /cxlink/compaction/self-heal/status` → self-healing scheduler status and SLO counters
+- `POST /cxlink/compaction/self-heal/trigger` → manual self-healing scheduler run
+- `POST /cxlink/session-resurrection/status` → session-resurrection scheduler status and SLO counters
+- `POST /cxlink/session-resurrection/trigger` → manual session-resurrection run + `sessionResurrectionStatus` event
 
 ## Contract notes
 

@@ -1,3 +1,4 @@
+import { writerAgentDraft } from "../../../../../agents/writer.agent";
 import type { LLMClient } from "../../types/llm";
 import type { MemoryAtom } from "../../types/memory";
 
@@ -82,14 +83,15 @@ export class WriterAgent {
     constructor(private readonly llm: LLMClient) { }
 
     async propose(input: { text: string; projectId: string; context?: string }): Promise<WriterOutput> {
+        const legacyDraft = writerAgentDraft(input.text);
         const fallback: WriterOutput = {
             candidates: [
                 {
                     kind: "semantic",
-                    title: "Generated Memory",
-                    summary: input.text.slice(0, 120),
-                    content: input.text,
-                    tags: ["auto-generated"],
+                    title: legacyDraft.title,
+                    summary: legacyDraft.summary,
+                    content: legacyDraft.content,
+                    tags: legacyDraft.tags,
                     sourceRef: input.projectId
                 }
             ]

@@ -1,5 +1,10 @@
 import express from "express";
-import { toBoolean, toBoundedInt, toBoundedNumber, toRecord, toTrimmedString } from "../../../../core/daemon/http";
+import {
+    isCortexaAgentId,
+    listCortexaAgents,
+    runCortexaAgent
+} from "../../../../core/agents/orchestrator.service";
+import { toBoolean, toBoundedInt, toBoundedNumber, toRecord, toStringArray, toTrimmedString } from "../../../../core/daemon/http";
 import {
     auditMemoryResurrection,
     backfillMemoryCompaction,
@@ -20,6 +25,10 @@ import {
     getSelfHealingStatus,
     triggerSelfHealingNow
 } from "../self-healing";
+import {
+    getSessionResurrectionStatus,
+    triggerSessionResurrectionNow
+} from "../session-resurrection";
 import { emitDaemonStreamEvent } from "../stream/events";
 
 export const cxlinkRouter = express.Router();
@@ -364,6 +373,72 @@ cxlinkRouter.post("/compaction/self-heal/trigger", async (req: any, res: any) =>
     }
 });
 
+cxlinkRouter.post("/session-resurrection/status", (_req: any, res: any) => {
+    try {
+        const status = getSessionResurrectionStatus();
+        res.json({
+            ok: true,
+            route: "cxlink/session-resurrection/status",
+            status
+        });
+    } catch (error) {
+        res.status(500).json({
+            ok: false,
+            error: error instanceof Error ? error.message : String(error)
+        });
+    }
+});
+
+cxlinkRouter.post("/session-resurrection/trigger", async (req: any, res: any) => {
+    const body = toRecord(req.body);
+    const reason = toTrimmedString(body.reason, 512) ?? "manual-trigger";
+    const dryRunOnly = toBoolean(body.dryRunOnly, false);
+    const projectPath = toTrimmedString(body.projectPath, 4096);
+    const includeChats = typeof body.includeChats === "boolean" ? body.includeChats : undefined;
+
+    try {
+        const report = await triggerSessionResurrectionNow({
+            reason,
+            dryRunOnly,
+            projectPath,
+            includeChats
+        });
+
+        const streamEvent = emitDaemonStreamEvent({
+            projectId: report.projectId,
+            eventType: "sessionResurrectionStatus",
+            payload: {
+                runId: report.runId,
+                trigger: report.trigger,
+                status: report.outcome,
+                durationMs: report.durationMs,
+                dryRunOnly: report.dryRunOnly,
+                branch: report.branch,
+                filesScanned: report.ingestion?.filesScanned,
+                chatFilesScanned: report.ingestion?.chatFilesScanned,
+                graphNodesUpserted: report.graphIndex?.nodesUpserted,
+                graphEdgesUpserted: report.graphIndex?.edgesUpserted,
+                anomalies: report.audit?.anomalies?.total,
+                applyCompacted: report.applyBackfill?.compacted
+            },
+            sessionId: `session-resurrection-manual-${Date.now().toString(36)}`
+        });
+
+        res.json({
+            ok: true,
+            route: "cxlink/session-resurrection/trigger",
+            report,
+            status: getSessionResurrectionStatus(),
+            streamEvent
+        });
+    } catch (error) {
+        res.status(500).json({
+            ok: false,
+            error: error instanceof Error ? error.message : String(error)
+        });
+    }
+});
+
 cxlinkRouter.post("/context", async (req: any, res: any) => {
     const body = toRecord(req.body);
     const query = toTrimmedString(body.query, 16_384);
@@ -496,6 +571,93 @@ cxlinkRouter.post("/plan", async (req: any, res: any) => {
             steps,
             cxf: bundle.cxf,
             envelope: bundle.envelope
+        });
+    } catch (error) {
+        res.status(500).json({
+            ok: false,
+            error: error instanceof Error ? error.message : String(error)
+        });
+    }
+});
+
+cxlinkRouter.post("/agent/list", (_req: any, res: any) => {
+    try {
+        const agents = listCortexaAgents();
+        res.json({
+            ok: true,
+            route: "cxlink/agent/list",
+            count: agents.length,
+            agents
+        });
+    } catch (error) {
+        res.status(500).json({
+            ok: false,
+            error: error instanceof Error ? error.message : String(error)
+        });
+    }
+});
+
+cxlinkRouter.post("/agent/run", async (req: any, res: any) => {
+    const body = toRecord(req.body);
+    const agentRaw = toTrimmedString(body.agent, 64);
+    const text = toTrimmedString(body.text, 24_000);
+    const projectId = toTrimmedString(body.projectId, 256);
+    const branch = toTrimmedString(body.branch, 128);
+    const context = toTrimmedString(body.context, 24_000);
+    const dryRun = toBoolean(body.dryRun, true);
+    const topK = toBoundedInt(body.topK, 1, 40);
+    const maxChars = toBoundedInt(body.maxChars, 64, 32_000);
+    const existingSnippets = toStringArray(body.existingSnippets, 40, 512);
+
+    if (!agentRaw || !isCortexaAgentId(agentRaw)) {
+        res.status(400).json({
+            ok: false,
+            error: "Missing or invalid required field: agent"
+        });
+        return;
+    }
+
+    if (!text) {
+        res.status(400).json({
+            ok: false,
+            error: "Missing required field: text"
+        });
+        return;
+    }
+
+    try {
+        const result = await runCortexaAgent({
+            agent: agentRaw,
+            text,
+            projectId,
+            branch,
+            context,
+            dryRun,
+            topK,
+            maxChars,
+            existingSnippets
+        });
+
+        const streamEvent = emitDaemonStreamEvent({
+            projectId: result.projectId,
+            eventType: "agentStatus",
+            payload: {
+                agent: result.agent,
+                status: "done",
+                dryRun: result.dryRun
+            },
+            sessionId: `agent-run-${Date.now().toString(36)}`
+        });
+
+        res.json({
+            ok: true,
+            route: "cxlink/agent/run",
+            agent: result.agent,
+            projectId: result.projectId,
+            branch: result.branch,
+            dryRun: result.dryRun,
+            result: result.output,
+            streamEvent
         });
     } catch (error) {
         res.status(500).json({

@@ -13,6 +13,30 @@ These are practical request/response examples for every currently exposed daemon
 
 All examples below use JSON request bodies for `POST` routes.
 
+## API surface map
+
+```mermaid
+flowchart TD
+  H[Health and metrics]
+  C[Core routes]
+  X[CX-LINK routes]
+  M[Compaction routes]
+  S[Session-resurrection routes]
+
+  H --> C
+  C --> X
+  X --> M
+  X --> S
+```
+
+| Group                | Representative routes                                                 | Typical use                                        |
+| -------------------- | --------------------------------------------------------------------- | -------------------------------------------------- |
+| Health               | `GET /health`, `GET /metrics`                                         | uptime checks and telemetry scraping               |
+| Core                 | `/ingest`, `/query`, `/context`, `/evolve`                            | ingestion, retrieval, context compile, progression |
+| CX-LINK              | `/cxlink/context`, `/cxlink/query`, `/cxlink/plan`, `/cxlink/agent/*` | protocol envelopes and orchestration               |
+| Compaction           | `/cxlink/compaction/*`                                                | stats, audit, dashboard, self-healing control      |
+| Session resurrection | `/cxlink/session-resurrection/*`                                      | scheduler status and manual trigger                |
+
 ---
 
 ## 1) Health
@@ -50,6 +74,35 @@ All examples below use JSON request bodies for `POST` routes.
           "successRate": 1,
           "errorRate": 0,
           "applyRate": 0.3333
+        }
+      ]
+    }
+  },
+  "sessionResurrection": {
+    "enabled": true,
+    "started": true,
+    "running": false,
+    "nextRunAt": 1713433072123,
+    "lastScheduledDelayMs": 901234,
+    "consecutiveFailures": 0,
+    "lastOutcome": "indexed",
+    "runCount": 9,
+    "slo": {
+      "generatedAt": 1713432172123,
+      "windows": [
+        {
+          "windowMinutes": 60,
+          "windowMs": 3600000,
+          "sinceMs": 1713428572123,
+          "total": 2,
+          "indexed": 2,
+          "applied": 0,
+          "skipped": 0,
+          "error": 0,
+          "successRate": 1,
+          "errorRate": 0,
+          "applyRate": 0,
+          "indexRate": 1
         }
       ]
     }
@@ -223,6 +276,7 @@ Notes:
 Notes:
 - Generates proactive intent suggestions for the query.
 - Set `warmup=true` to also return compiled context using suggested defaults.
+- When daemon stream subscribers are connected, proactive suggestion flows may emit `contextSuggested` events.
 
 **Request**
 ```json
@@ -581,6 +635,86 @@ Notes:
 }
 ```
 
+### POST `/cxlink/agent/list`
+
+**Request**
+```json
+{}
+```
+
+**Response**
+```json
+{
+  "ok": true,
+  "route": "cxlink/agent/list",
+  "count": 10,
+  "agents": [
+    {
+      "id": "planner",
+      "description": "Planning agent that produces structured strategies, risks, and constraints.",
+      "family": "heuristic",
+      "mutation": false
+    },
+    {
+      "id": "multi_agent_loop",
+      "description": "Blueprint loop that composes planner + writer + critic + refactor outputs.",
+      "family": "orchestrator",
+      "mutation": true
+    }
+  ]
+}
+```
+
+### POST `/cxlink/agent/run`
+
+Notes:
+- Successful runs emit daemon stream event type `agentStatus`.
+
+**Request**
+```json
+{
+  "projectId": "cortexta",
+  "branch": "feature/agents",
+  "agent": "multi_agent_loop",
+  "text": "integrate planner and refactor outputs into cxlink orchestration",
+  "dryRun": true,
+  "topK": 8,
+  "maxChars": 1200
+}
+```
+
+**Response**
+```json
+{
+  "ok": true,
+  "route": "cxlink/agent/run",
+  "agent": "multi_agent_loop",
+  "projectId": "cortexta",
+  "branch": "feature/agents",
+  "dryRun": true,
+  "result": {
+    "agent": "multi_agent_loop",
+    "plan": {
+      "intent": "feature"
+    },
+    "writer": {
+      "candidateCount": 1
+    },
+    "critic": {
+      "selectedAction": "store"
+    },
+    "refactor": {
+      "actionCount": 3
+    }
+  },
+  "streamEvent": {
+    "payload": {
+      "eventType": "agentStatus"
+    }
+  }
+}
+```
+
 ### POST `/cxlink/branch/list`
 
 **Request**
@@ -678,6 +812,9 @@ Notes:
 ```
 
 ### POST `/cxlink/branch/switch`
+
+Notes:
+- Successful switches emit daemon stream event type `branchSwitched`.
 
 **Request**
 ```json
@@ -1171,6 +1308,160 @@ Notes:
   },
   "status": {
     "runCount": 15
+  }
+}
+```
+
+---
+
+## 5) Session-resurrection routes
+
+### POST `/cxlink/session-resurrection/status`
+
+**Request**
+```json
+{}
+```
+
+**Response**
+```json
+{
+  "ok": true,
+  "route": "cxlink/session-resurrection/status",
+  "status": {
+    "enabled": true,
+    "started": true,
+    "running": false,
+    "nextRunAt": 1713433072123,
+    "lastScheduledDelayMs": 901234,
+    "consecutiveFailures": 0,
+    "runCount": 9,
+    "config": {
+      "projectPath": "C:/Users/ayana/Projects/Cortexta",
+      "projectId": "cortexta",
+      "branch": "main",
+      "includeChats": true,
+      "skipUnchanged": true,
+      "graphIndexLookbackHours": 336,
+      "graphIndexLimit": 5000,
+      "graphSnapshotLimit": 5000,
+      "applyEnabled": false,
+      "backoffEnabled": true,
+      "sloWindowsMinutes": [60, 1440, 10080]
+    },
+    "lastRun": {
+      "runId": "sessres_m14a2f_9",
+      "trigger": "scheduled",
+      "dryRunOnly": false,
+      "outcome": "indexed",
+      "durationMs": 226,
+      "ingestion": {
+        "filesScanned": 714,
+        "chatFilesScanned": 18,
+        "memoriesStored": 2130
+      },
+      "graphIndex": {
+        "nodesUpserted": 482,
+        "edgesUpserted": 903,
+        "sessionNodes": 27,
+        "temporalNodes": 12,
+        "chatToCodeEdges": 154
+      }
+    },
+    "recentRuns": [],
+    "slo": {
+      "generatedAt": 1713432172123,
+      "windows": [
+        {
+          "windowMinutes": 60,
+          "windowMs": 3600000,
+          "sinceMs": 1713428572123,
+          "total": 2,
+          "indexed": 2,
+          "applied": 0,
+          "skipped": 0,
+          "error": 0,
+          "successRate": 1,
+          "errorRate": 0,
+          "applyRate": 0,
+          "indexRate": 1
+        }
+      ]
+    }
+  }
+}
+```
+
+### POST `/cxlink/session-resurrection/trigger`
+
+Notes:
+- Successful manual triggers emit daemon stream event type `sessionResurrectionStatus`.
+
+**Request**
+```json
+{
+  "reason": "ops-manual-check",
+  "dryRunOnly": true,
+  "includeChats": false,
+  "projectPath": "C:/Users/ayana/Projects/Cortexta"
+}
+```
+
+**Response**
+```json
+{
+  "ok": true,
+  "route": "cxlink/session-resurrection/trigger",
+  "report": {
+    "runId": "sessres_m14a2f_a",
+    "trigger": "manual",
+    "reason": "ops-manual-check",
+    "dryRunOnly": true,
+    "projectId": "cortexta",
+    "branch": "main",
+    "outcome": "indexed",
+    "durationMs": 244,
+    "decision": {
+      "allowApply": false,
+      "applyLimit": 2000,
+      "reasons": [
+        "Manual dry-run only mode requested.",
+        "Apply mode is disabled by configuration."
+      ]
+    },
+    "ingestion": {
+      "filesScanned": 714,
+      "chatFilesScanned": 0,
+      "memoriesStored": 1876
+    },
+    "graphIndex": {
+      "nodesUpserted": 463,
+      "edgesUpserted": 852,
+      "sessionNodes": 24,
+      "temporalNodes": 11,
+      "chatToCodeEdges": 121
+    },
+    "audit": {
+      "scannedRows": 5000,
+      "compactedRows": 4100,
+      "plainRows": 900,
+      "anomalies": {
+        "invalidChecksum": 0,
+        "decodeError": 0,
+        "total": 0
+      },
+      "anomalyRate": 0,
+      "compactionOpportunityRate": 0.18,
+      "recommendationCount": 1
+    }
+  },
+  "status": {
+    "runCount": 10
+  },
+  "streamEvent": {
+    "payload": {
+      "eventType": "sessionResurrectionStatus"
+    }
   }
 }
 ```

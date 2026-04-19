@@ -4,9 +4,27 @@ This runbook is for local operators running CORTEXA via the primary CLI.
 
 [← Back to README](../README.md)
 
+## Runbook flow overview
+
+```mermaid
+flowchart LR
+  A[Bootstrap environment] --> B[Initialize and ingest]
+  B --> C[Run daemon and verify health]
+  C --> D[Daily checks]
+  D --> E[Weekly maintenance]
+  E --> F[Troubleshoot and recover]
+```
+
+| Cadence  | Primary objective                 | Typical commands                                    |
+| -------- | --------------------------------- | --------------------------------------------------- |
+| Day 1    | Bring runtime online safely       | `doctor`, `init`, `ingest`, `daemon status`         |
+| Daily    | Verify posture and drift          | `daemon status`, `dashboard`, `memory stats`        |
+| Weekly   | Reduce storage risk and anomalies | `memory backfill`, `memory audit`, dashboard export |
+| Incident | Restore correctness quickly       | audit, inspect records, re-ingest, targeted delete  |
+
 ---
 
-## 🚀 Day 1: Bootstrap a healthy environment
+## Day 1: Bootstrap a healthy environment
 
 ### 1) Verify toolchain
 
@@ -42,6 +60,24 @@ CORTEXA_SELF_HEAL_BACKOFF_ENABLED=true
 CORTEXA_SELF_HEAL_BACKOFF_MULTIPLIER=2
 CORTEXA_SELF_HEAL_BACKOFF_MAX_INTERVAL_MS=21600000
 CORTEXA_SELF_HEAL_SLO_WINDOWS_MINUTES=60,1440,10080
+
+# Optional session-resurrection scheduler (ingest + graph indexing + resurrection checks)
+CORTEXA_SESSION_RESURRECTION_ENABLED=true
+CORTEXA_SESSION_RESURRECTION_PROJECT_PATH=C:/Users/ayana/Projects/Cortexta
+CORTEXA_SESSION_RESURRECTION_PROJECT_ID=cortexta
+CORTEXA_SESSION_RESURRECTION_BRANCH=main
+CORTEXA_SESSION_RESURRECTION_RUN_ON_START=true
+CORTEXA_SESSION_RESURRECTION_INCLUDE_CHATS=true
+CORTEXA_SESSION_RESURRECTION_SKIP_UNCHANGED=true
+CORTEXA_SESSION_RESURRECTION_GRAPH_LOOKBACK_HOURS=336
+CORTEXA_SESSION_RESURRECTION_APPLY_ENABLED=false
+CORTEXA_SESSION_RESURRECTION_MAX_ALLOWED_ANOMALIES=0
+CORTEXA_SESSION_RESURRECTION_PERSIST_HISTORY=true
+CORTEXA_SESSION_RESURRECTION_PERSISTED_HISTORY_LIMIT=2000
+CORTEXA_SESSION_RESURRECTION_BACKOFF_ENABLED=true
+CORTEXA_SESSION_RESURRECTION_BACKOFF_MULTIPLIER=2
+CORTEXA_SESSION_RESURRECTION_BACKOFF_MAX_INTERVAL_MS=21600000
+CORTEXA_SESSION_RESURRECTION_SLO_WINDOWS_MINUTES=60,1440,10080
 ```
 
 ### 3) Initialize storage
@@ -99,7 +135,7 @@ pnpm run cortexa -- daemon status
 
 ---
 
-## 🛠️ Day 2: Ongoing maintenance workflows
+## Day 2: Ongoing maintenance workflows
 
 ### Daily checks (quick)
 
@@ -113,6 +149,11 @@ If daemon token auth is enabled, verify scheduler status via API:
 
 ```bash
 curl -s -X POST http://localhost:4312/cxlink/compaction/self-heal/status \
+  -H "content-type: application/json" \
+  -H "x-cortexa-token: <token>" \
+  -d '{}'
+
+curl -s -X POST http://localhost:4312/cxlink/session-resurrection/status \
   -H "content-type: application/json" \
   -H "x-cortexa-token: <token>" \
   -d '{}'
@@ -157,6 +198,11 @@ curl -s -X POST http://localhost:4312/cxlink/compaction/self-heal/trigger \
   -H "content-type: application/json" \
   -H "x-cortexa-token: <token>" \
   -d '{"reason":"ops-manual-check","dryRunOnly":true}'
+
+curl -s -X POST http://localhost:4312/cxlink/session-resurrection/trigger \
+  -H "content-type: application/json" \
+  -H "x-cortexa-token: <token>" \
+  -d '{"reason":"ops-manual-check","dryRunOnly":true}'
 ```
 
 ### Dashboard artifact export (for ops review)
@@ -198,7 +244,7 @@ pnpm run cortexa -- memory delete <memory-id>
 
 ---
 
-## 🔁 Safe daemon operations
+## Safe daemon operations
 
 ### Start
 
@@ -217,7 +263,7 @@ pnpm run cortexa -- daemon stop
 
 ---
 
-## 🧩 Troubleshooting cheat sheet
+## Troubleshooting cheat sheet
 
 **Symptom:** `ingest` is slow or appears stuck on huge repos
 - Fix: reduce ingestion bounds:
@@ -241,3 +287,11 @@ pnpm run cortexa -- daemon stop
   - `CORTEXA_SELF_HEAL_BACKOFF_MULTIPLIER`
   - `CORTEXA_SELF_HEAL_BACKOFF_MAX_INTERVAL_MS`
   - `CORTEXA_SELF_HEAL_SLO_WINDOWS_MINUTES`
+
+**Symptom:** Session-resurrection scheduler repeatedly fails
+- Check `/cxlink/session-resurrection/status` for `lastRun.error`, `consecutiveFailures`, `lastScheduledDelayMs`, and `slo.windows`.
+- Confirm `CORTEXA_SESSION_RESURRECTION_PROJECT_PATH` exists and points to the intended project root.
+- Tune backoff controls with:
+  - `CORTEXA_SESSION_RESURRECTION_BACKOFF_MULTIPLIER`
+  - `CORTEXA_SESSION_RESURRECTION_BACKOFF_MAX_INTERVAL_MS`
+  - `CORTEXA_SESSION_RESURRECTION_SLO_WINDOWS_MINUTES`

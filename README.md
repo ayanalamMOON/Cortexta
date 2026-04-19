@@ -23,7 +23,40 @@ This README is fully updated for:
 - daemon HTTP/WS routes and operational scripts
 - branch-aware memory forking/merge workflows (`main` + custom branches)
 - temporal retrieval + diff APIs for time-travel context reconstruction (`asOf`)
-- intent-aware proactive context suggestions and daemon stream events (`contextSuggested`, `branchSwitched`)
+- intent-aware proactive context suggestions and daemon stream events (`contextSuggested`, `branchSwitched`, `agentStatus`, `sessionResurrectionStatus`)
+- unified agent orchestration surface (planner/refactor/writer/critic/compressor + evolution and multi-agent loop)
+
+## System map
+
+```mermaid
+flowchart LR
+  CLI[Primary CLI]
+  MCP[MCP stdio server]
+  DAEMON[Daemon HTTP and WS]
+  CXLINK[CX-LINK routes]
+  MEM[Mempalace]
+  SQLITE[(SQLite)]
+  VECTOR[(Vector provider)]
+  GRAPH[(Graph index)]
+
+  CLI --> DAEMON
+  MCP --> DAEMON
+  DAEMON --> CXLINK
+  CXLINK --> MEM
+  MEM --> SQLITE
+  MEM --> VECTOR
+  MEM --> GRAPH
+```
+
+## Surface at a glance
+
+| Surface     | Primary purpose                         | Key paths                                                                        |
+| ----------- | --------------------------------------- | -------------------------------------------------------------------------------- |
+| CLI         | Local operator and developer workflows  | `ingest`, `query`, `context`, `agents`, `memory`, `daemon`                       |
+| Daemon HTTP | Programmatic runtime APIs               | `/query`, `/context`, `/evolve`, `/cxlink/*`                                     |
+| Daemon WS   | Stream lifecycle/status events          | `contextSuggested`, `branchSwitched`, `agentStatus`, `sessionResurrectionStatus` |
+| MCP stdio   | Tool bridge for MCP clients             | `tools/list`, `tools/call`                                                       |
+| Mempalace   | Memory retrieval and compaction runtime | snapshots, branch overlay, temporal diff/query                                   |
 
 ---
 
@@ -49,9 +82,13 @@ This README is fully updated for:
   - persisted scheduler run history (`self_healing_run_history`) across restarts
   - exponential backoff on repeated run failures
   - rolling-window SLO counters for `applied` / `dry-run-only` / `skipped` / `error`
+- **Session-resurrection scheduler**
+  - background code/chat ingestion + graph memory indexing (`graph_nodes`, `graph_edges`)
+  - session and temporal lineage links for resurrection-aware memory navigation
+  - persisted run history (`session_resurrection_run_history`) with backoff + SLO windows
 - **Observability + hardening**
   - structured JSON logging for daemon HTTP and scheduler lifecycle
-  - Prometheus metrics export (`/metrics`) with HTTP + self-healing dimensions
+  - Prometheus metrics export (`/metrics`) with HTTP + self-healing + session-resurrection dimensions
   - built-in rate limiting controls for daemon APIs
 - **Context compiler**
   - token-bounded packing
@@ -64,8 +101,10 @@ This README is fully updated for:
   - MCP context codec tools (`cortexa_encode_mcp_ctx` / `cortexa_decode_mcp_ctx`)
 - **Daemon APIs + WS stream**
   - query/context/evolve/cxlink + compaction endpoints
+  - session-resurrection scheduler status/trigger endpoints
   - branch management and temporal diff/query endpoints
-  - stream deltas for proactive suggestion + branch switch notifications
+  - agent list/run orchestration endpoints for blueprint-aligned multi-agent workflows
+  - stream deltas for `contextSuggested`, `branchSwitched`, `agentStatus`, and `sessionResurrectionStatus`
 
 ---
 
@@ -76,6 +115,7 @@ Primary CLI (cortexa)
   ├── ingest        (code/chat ingestion)
   ├── query         (hybrid retrieval)
   ├── context       (token-bounded context compile)
+  ├── agents        (list/run unified Cortexa agents)
   ├── memory        (list/search/get/resurrect/delete/stats/backfill/dashboard)
   ├── dashboard     (alias => memory dashboard)
   └── daemon        (local HTTP + WS runtime)
@@ -144,10 +184,14 @@ pnpm run cortexa -- context "add a new daemon route with tests"
 # 3) run progression telemetry
 pnpm run cortexa -- evolve "improve progression selection quality" --project-id=my-project --dry-run --json
 
-# 4) run daemon for API clients
+# 4) run integrated agents (including blueprint multi-agent loop)
+pnpm run cortexa -- agents list
+pnpm run cortexa -- agents run multi_agent_loop "stabilize agent routing + telemetry" --project-id=my-project --dry-run --json
+
+# 5) run daemon for API clients
 pnpm run cortexa:daemon
 
-# 5) (optional) run MCP stdio transport for external MCP clients
+# 6) (optional) run MCP stdio transport for external MCP clients
 pnpm run cortexa:mcp
 ```
 
@@ -237,6 +281,31 @@ Options:
 - `--context=<text>` (optional context hint)
 - `--dry-run` (compute progression without persisting)
 - `--json` or `--format=json` (emit full telemetry payload)
+
+#### `agents`
+
+List and run the unified Cortexa agent catalog (heuristic, evolution, and orchestration loop).
+
+```bash
+pnpm run cortexa -- agents list
+pnpm run cortexa -- agents run planner "design migration safety checks" --project-id=my-service --branch=release/next --dry-run
+pnpm run cortexa -- agents run multi_agent_loop "prepare full implementation strategy" --project-id=my-service --dry-run --json
+pnpm run cortexa -- agents run multi_agent_loop "persist evolution result" --project-id=my-service --apply
+```
+
+Subcommands:
+- `list` → returns all available agents with family + mutation metadata
+- `run <agent> <text>` → executes a specific agent (`writer`, `critic`, `compressor`, `planner`, `refactor`, `evolution_writer`, `evolution_critic`, `evolution_consolidator`, `evolution_archivist`, `multi_agent_loop`)
+
+Common options:
+- `--project-id=<id>`
+- `--branch=<name>`
+- `--context=<text>`
+- `--dry-run` (default mode)
+- `--apply` (opt-in persistence / mutation mode)
+- `--top-k=<n>`
+- `--max-chars=<n>`
+- `--json` or `--format=json`
 
 #### `daemon`
 
@@ -370,6 +439,8 @@ Base default:
 - `POST /cxlink/context`
 - `POST /cxlink/query`
 - `POST /cxlink/plan`
+- `POST /cxlink/agent/list`
+- `POST /cxlink/agent/run`
 - `POST /cxlink/branch/list`
 - `POST /cxlink/branch/create`
 - `POST /cxlink/branch/merge`
@@ -382,6 +453,8 @@ Base default:
 - `POST /cxlink/compaction/audit`
 - `POST /cxlink/compaction/self-heal/status`
 - `POST /cxlink/compaction/self-heal/trigger`
+- `POST /cxlink/session-resurrection/status`
+- `POST /cxlink/session-resurrection/trigger`
 
 `/cxlink/context`, `/cxlink/query`, and `/cxlink/plan` responses now also include a `memoryHealth` signal so agent runtimes can react to compaction/anomaly posture.
 
@@ -389,7 +462,9 @@ Base default:
 
 `/context` and `/query` now return an intent-aware `suggestion`; `/context/suggest` provides a dedicated proactive endpoint with optional warmup context compilation.
 
-The daemon health payload now includes summarized self-healing scheduler status (`enabled`, `started`, `running`, `nextRunAt`, `lastScheduledDelayMs`, `consecutiveFailures`, `lastOutcome`, `runCount`, `slo`).
+`/cxlink/agent/list` and `/cxlink/agent/run` expose the integrated agent catalog and execution path, including the blueprint-style `multi_agent_loop` orchestrator.
+
+The daemon health payload now includes summarized self-healing and session-resurrection scheduler status (`enabled`, `started`, `running`, `nextRunAt`, `lastScheduledDelayMs`, `consecutiveFailures`, `lastOutcome`, `runCount`, `slo`).
 
 `POST /evolve` supports two modes:
 - **consolidate mode** (existing behavior): no `text` field, runs compaction-style consolidation preview/apply over stored memories.
@@ -430,6 +505,12 @@ The daemon health payload now includes summarized self-healing scheduler status 
 - Scheduler history table: `self_healing_run_history`
 - Persists every scheduler/manual run payload so status survives daemon restarts
 - Powers rolling-window SLO counters exposed by status + health payloads
+
+### Session-resurrection run history persistence
+
+- Scheduler history table: `session_resurrection_run_history`
+- Persists every scheduler/manual run payload so session + temporal indexing status survives daemon restarts
+- Powers rolling-window SLO counters exposed by `/cxlink/session-resurrection/status` and `/health`
 
 ---
 
@@ -511,6 +592,36 @@ The daemon health payload now includes summarized self-healing scheduler status 
 - `CORTEXA_SELF_HEAL_BACKOFF_MAX_INTERVAL_MS` (default `min(8x interval, 24h)`)
 - `CORTEXA_SELF_HEAL_SLO_WINDOWS_MINUTES` (default `60,1440,10080`)
 
+### Session-resurrection scheduler
+
+- `CORTEXA_SESSION_RESURRECTION_ENABLED` (default `false`)
+- `CORTEXA_SESSION_RESURRECTION_PROJECT_PATH` (required for automatic ingestion/indexing)
+- `CORTEXA_SESSION_RESURRECTION_PROJECT_ID` (optional; defaults to project folder name)
+- `CORTEXA_SESSION_RESURRECTION_BRANCH` (default `main`)
+- `CORTEXA_SESSION_RESURRECTION_INTERVAL_MS` (default `900000`)
+- `CORTEXA_SESSION_RESURRECTION_JITTER_MS` (default `30000`)
+- `CORTEXA_SESSION_RESURRECTION_RUN_ON_START` (default `false`)
+- `CORTEXA_SESSION_RESURRECTION_INCLUDE_CHATS` (default `true`)
+- `CORTEXA_SESSION_RESURRECTION_SKIP_UNCHANGED` (default `true`)
+- `CORTEXA_SESSION_RESURRECTION_MAX_FILES` (optional)
+- `CORTEXA_SESSION_RESURRECTION_MAX_CHAT_FILES` (default `400`)
+- `CORTEXA_SESSION_RESURRECTION_CHAT_ROOT` (optional explicit chat search root)
+- `CORTEXA_SESSION_RESURRECTION_GRAPH_LOOKBACK_HOURS` (default `336`)
+- `CORTEXA_SESSION_RESURRECTION_GRAPH_LIMIT` (default `5000`)
+- `CORTEXA_SESSION_RESURRECTION_GRAPH_SNAPSHOT_LIMIT` (default `5000`)
+- `CORTEXA_SESSION_RESURRECTION_AUDIT_LIMIT` (default `5000`)
+- `CORTEXA_SESSION_RESURRECTION_AUDIT_MAX_ISSUES` (default `20`)
+- `CORTEXA_SESSION_RESURRECTION_BACKFILL_LIMIT` (default `2000`)
+- `CORTEXA_SESSION_RESURRECTION_APPLY_ENABLED` (default `false`)
+- `CORTEXA_SESSION_RESURRECTION_MAX_ALLOWED_ANOMALIES` (default `0`)
+- `CORTEXA_SESSION_RESURRECTION_HISTORY_LIMIT` (default `50`)
+- `CORTEXA_SESSION_RESURRECTION_PERSIST_HISTORY` (default `true`)
+- `CORTEXA_SESSION_RESURRECTION_PERSISTED_HISTORY_LIMIT` (default `2000`)
+- `CORTEXA_SESSION_RESURRECTION_BACKOFF_ENABLED` (default `true`)
+- `CORTEXA_SESSION_RESURRECTION_BACKOFF_MULTIPLIER` (default `2`)
+- `CORTEXA_SESSION_RESURRECTION_BACKOFF_MAX_INTERVAL_MS` (default `min(8x interval, 24h)`)
+- `CORTEXA_SESSION_RESURRECTION_SLO_WINDOWS_MINUTES` (default `60,1440,10080`)
+
 ---
 
 ## Testing and verification
@@ -521,8 +632,10 @@ pnpm run test:unit
 pnpm run test:observability
 pnpm run test:mcp
 pnpm run test:self-healing
+pnpm run test:session-resurrection
 pnpm run test:compaction
 pnpm run test:branch-temporal
+pnpm run test:agents-realistic
 pnpm run test:daemons
 ```
 
@@ -556,6 +669,12 @@ For containerized deployments, see [`docs/containerization.md`](docs/containeriz
 - **Self-healing scheduler keeps failing repeatedly**
   - check `consecutiveFailures`, `lastScheduledDelayMs`, and `slo.windows` in `/cxlink/compaction/self-heal/status` or `/health`.
   - if needed, widen `CORTEXA_SELF_HEAL_BACKOFF_MAX_INTERVAL_MS` and inspect latest `error` run payload in persisted history.
+- **Session-resurrection scheduler does not run**
+  - ensure `CORTEXA_SESSION_RESURRECTION_ENABLED=true` and `CORTEXA_SESSION_RESURRECTION_PROJECT_PATH` points to a valid project directory.
+  - inspect `/cxlink/session-resurrection/status` for `lastRun.error`, `consecutiveFailures`, and `slo.windows`.
+- **Session-resurrection never applies backfill**
+  - inspect `/cxlink/session-resurrection/status` decision reasons (dry-run-only, anomalies, or ingestion errors).
+  - verify `CORTEXA_SESSION_RESURRECTION_APPLY_ENABLED=true` and anomaly threshold settings.
 
 ---
 
@@ -567,10 +686,12 @@ pnpm run build
 pnpm run dev
 pnpm run typecheck
 pnpm run test:self-healing
+pnpm run test:session-resurrection
 pnpm run test:observability
 pnpm run test:mcp
 pnpm run test:compaction
 pnpm run test:branch-temporal
+pnpm run test:agents-realistic
 pnpm run test:daemons
 pnpm run cortexa -- <command>
 pnpm run cortexa:daemon

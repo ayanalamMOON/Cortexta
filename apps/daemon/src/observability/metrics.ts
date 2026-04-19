@@ -21,6 +21,13 @@ interface SelfHealingRunMetricInput {
     consecutiveFailures?: number;
 }
 
+interface SessionResurrectionRunMetricInput {
+    trigger: string;
+    outcome: string;
+    durationMs: number;
+    consecutiveFailures?: number;
+}
+
 const registry = new Registry();
 
 const httpRequestsTotal = new Counter({
@@ -62,6 +69,27 @@ const selfHealingRunDurationSeconds = new Histogram({
 const selfHealingConsecutiveFailuresGauge = new Gauge({
     name: "cortexa_daemon_self_healing_consecutive_failures",
     help: "Current consecutive self-healing failures.",
+    registers: [registry]
+});
+
+const sessionResurrectionRunsTotal = new Counter({
+    name: "cortexa_daemon_session_resurrection_runs_total",
+    help: "Total number of session-resurrection runs by trigger and outcome.",
+    labelNames: ["trigger", "outcome"] as const,
+    registers: [registry]
+});
+
+const sessionResurrectionRunDurationSeconds = new Histogram({
+    name: "cortexa_daemon_session_resurrection_run_duration_seconds",
+    help: "Session-resurrection run duration in seconds by trigger and outcome.",
+    labelNames: ["trigger", "outcome"] as const,
+    buckets: [0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60],
+    registers: [registry]
+});
+
+const sessionResurrectionConsecutiveFailuresGauge = new Gauge({
+    name: "cortexa_daemon_session_resurrection_consecutive_failures",
+    help: "Current consecutive session-resurrection failures.",
     registers: [registry]
 });
 
@@ -168,6 +196,36 @@ export function setSelfHealingConsecutiveFailures(value: number): void {
     selfHealingConsecutiveFailuresGauge.set(Math.max(0, Math.trunc(value)));
 }
 
+export function recordSessionResurrectionRunMetric(input: SessionResurrectionRunMetricInput): void {
+    if (!metricsConfig.enabled) {
+        return;
+    }
+
+    const trigger = input.trigger.trim() || "unknown";
+    const outcome = input.outcome.trim() || "unknown";
+
+    sessionResurrectionRunsTotal.labels(trigger, outcome).inc();
+    sessionResurrectionRunDurationSeconds
+        .labels(trigger, outcome)
+        .observe(Math.max(0, input.durationMs) / 1000);
+
+    if (typeof input.consecutiveFailures === "number" && Number.isFinite(input.consecutiveFailures)) {
+        sessionResurrectionConsecutiveFailuresGauge.set(Math.max(0, Math.trunc(input.consecutiveFailures)));
+    }
+}
+
+export function setSessionResurrectionConsecutiveFailures(value: number): void {
+    if (!metricsConfig.enabled) {
+        return;
+    }
+
+    if (!Number.isFinite(value)) {
+        return;
+    }
+
+    sessionResurrectionConsecutiveFailuresGauge.set(Math.max(0, Math.trunc(value)));
+}
+
 export async function renderMetrics(): Promise<{ contentType: string; payload: string }> {
     return {
         contentType: registry.contentType,
@@ -178,4 +236,5 @@ export async function renderMetrics(): Promise<{ contentType: string; payload: s
 export function resetDaemonMetricsForTests(): void {
     registry.resetMetrics();
     selfHealingConsecutiveFailuresGauge.set(0);
+    sessionResurrectionConsecutiveFailuresGauge.set(0);
 }

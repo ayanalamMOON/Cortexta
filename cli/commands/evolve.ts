@@ -16,18 +16,20 @@ export async function evolveCommand(cliArgs: string[] = []): Promise<void> {
 
     if (!text) {
         logger.warn(
-            "Missing text. Usage: cortexa evolve <text> [--project-id=<id>] [--context=<text>] [--dry-run] [--json]"
+            "Missing text. Usage: cortexa evolve <text> [--project-id=<id>] [--branch=<name>] [--context=<text>] [--dry-run] [--json]"
         );
         return;
     }
 
     const projectId = readStringOption(parsed, ["project-id", "projectId"]) ?? "default";
+    const branch = readStringOption(parsed, ["branch"]);
     const context = readStringOption(parsed, ["context"]);
     const dryRun = hasFlag(parsed, ["dry-run", "dryRun"]);
     const jsonMode = hasFlag(parsed, ["json"]) || readStringOption(parsed, ["format"]) === "json";
 
     const progression = await evolveMemoryWithProgression({
         projectId,
+        branch,
         text,
         context,
         dryRun

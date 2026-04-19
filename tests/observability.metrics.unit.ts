@@ -4,6 +4,7 @@ import {
     openInflightRequestMetric,
     recordHttpRequestMetric,
     recordSelfHealingRunMetric,
+    recordSessionResurrectionRunMetric,
     renderMetrics,
     resetDaemonMetricsForTests
 } from "../apps/daemon/src/observability/metrics";
@@ -34,6 +35,13 @@ async function main(): Promise<void> {
         consecutiveFailures: 0
     });
 
+    recordSessionResurrectionRunMetric({
+        trigger: "scheduled",
+        outcome: "indexed",
+        durationMs: 153,
+        consecutiveFailures: 0
+    });
+
     const metrics = await renderMetrics();
 
     assert.equal(typeof metrics.contentType, "string", "metrics content type should be provided");
@@ -49,6 +57,14 @@ async function main(): Promise<void> {
     assert.ok(
         metrics.payload.includes("trigger=\"manual\",outcome=\"dry-run-only\""),
         "self-healing labels should include trigger/outcome dimensions"
+    );
+    assert.ok(
+        metrics.payload.includes("cortexa_daemon_session_resurrection_runs_total"),
+        "session-resurrection counter should be exported"
+    );
+    assert.ok(
+        metrics.payload.includes("trigger=\"scheduled\",outcome=\"indexed\""),
+        "session-resurrection labels should include trigger/outcome dimensions"
     );
 
     console.log("✅ observability metrics unit tests passed");

@@ -5,6 +5,10 @@ import { ConsolidatorAgent } from "./consolidator.agent";
 import { CriticAgent, type CriticOutput } from "./critic.agent";
 import { WriterAgent } from "./writer.agent";
 
+interface EvolutionCompressor {
+    compress(input: { text: string; maxChars?: number; preserveLineBreaks?: boolean }): string;
+}
+
 export interface EvolutionMemoryStore {
     searchSimilar(text: string, topK: number): Promise<MemoryAtom[]>;
     upsert(atom: MemoryAtom): Promise<void>;
@@ -14,7 +18,7 @@ export interface EvolutionMemoryStore {
 export type EvolutionAction = CriticOutput["action"] | "archive";
 
 export interface EvolutionStageProgress {
-    stage: "propose" | "review" | "consolidate" | "archivist" | "persist";
+    stage: "propose" | "review" | "compress" | "consolidate" | "archivist" | "persist";
     ok: boolean;
     detail: string;
     at: number;
@@ -74,6 +78,12 @@ function summarizeContent(text: string, maxChars = 220): string {
     return `${clean.slice(0, maxChars - 1).trimEnd()}…`;
 }
 
+const defaultCompressor: EvolutionCompressor = {
+    compress(input) {
+        return summarizeContent(input.text, input.maxChars ?? 220);
+    }
+};
+
 export class MemoryEvolutionEngine {
     private readonly archivist = new ArchivistAgent();
 
@@ -81,7 +91,8 @@ export class MemoryEvolutionEngine {
         private readonly writer: WriterAgent,
         private readonly critic: CriticAgent,
         private readonly consolidator: ConsolidatorAgent,
-        private readonly store: EvolutionMemoryStore
+        private readonly store: EvolutionMemoryStore,
+        private readonly compressor: EvolutionCompressor = defaultCompressor
     ) { }
 
     async evolve(input: { projectId: string; text: string; context?: string }): Promise<{ stored: boolean; action: string; reason: string }> {
@@ -182,9 +193,18 @@ export class MemoryEvolutionEngine {
         } else if (selected.review.action === "compress") {
             mergedAtom = {
                 ...atom,
-                summary: summarizeContent(atom.summary, 180),
-                content: summarizeContent(atom.content, 1200)
+                summary: this.compressor.compress({
+                    text: atom.summary,
+                    maxChars: 180,
+                    preserveLineBreaks: false
+                }),
+                content: this.compressor.compress({
+                    text: atom.content,
+                    maxChars: 1200,
+                    preserveLineBreaks: true
+                })
             };
+            this.pushStage(progression, "compress", true, "compressor-agent-applied");
             this.pushStage(progression, "consolidate", true, "compressed-candidate-content");
         } else {
             this.pushStage(progression, "consolidate", true, "no-consolidation-required");

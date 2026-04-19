@@ -85,7 +85,9 @@ async function main(): Promise<void> {
     const listedTools = (listToolsResponse?.result as { tools?: Array<{ name?: string }> }).tools ?? [];
     assert.ok(listedTools.length >= 6, "expected a broad tool surface");
     assert.ok(listedTools.some((tool) => tool.name === "cortexa_context"), "context tool should be listed");
+    assert.ok(listedTools.some((tool) => tool.name === "cortexa_agent_list"), "agent list tool should be listed");
     assert.ok(!listedTools.some((tool) => tool.name === "cortexa_ingest"), "mutation tool should be hidden when disabled");
+    assert.ok(!listedTools.some((tool) => tool.name === "cortexa_agent_run"), "agent run mutation tool should be hidden when disabled");
 
     const queryResponse = await router.handle({
         jsonrpc: "2.0",
@@ -189,6 +191,42 @@ async function main(): Promise<void> {
     };
     assert.equal(decodedBody.decoded?.intent, "normalize payload", "decoded payload should preserve intent");
     assert.deepEqual(decodedBody.decoded?.concepts, ["a", "b"], "decoded payload should normalize concepts");
+
+    const agentListResponse = await mcpCodecRouter.handle({
+        jsonrpc: "2.0",
+        id: 13,
+        method: "tools/call",
+        params: {
+            name: "cortexa_agent_list",
+            arguments: {}
+        }
+    });
+
+    assert.equal(agentListResponse?.error, undefined, "agent list tool should succeed");
+    assert.ok(
+        calls.some((call) => call.method === "POST" && call.route === "/cxlink/agent/list"),
+        "agent list tool should hit agent list route"
+    );
+
+    const agentRunResponse = await mcpCodecRouter.handle({
+        jsonrpc: "2.0",
+        id: 14,
+        method: "tools/call",
+        params: {
+            name: "cortexa_agent_run",
+            arguments: {
+                agent: "planner",
+                text: "plan daemon integration hardening",
+                dryRun: true
+            }
+        }
+    });
+
+    assert.equal(agentRunResponse?.error, undefined, "agent run tool should succeed");
+    assert.ok(
+        calls.some((call) => call.method === "POST" && call.route === "/cxlink/agent/run"),
+        "agent run tool should hit agent run route"
+    );
 
     console.log("✅ MCP server integration tests passed");
 }

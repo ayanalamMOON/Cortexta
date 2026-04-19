@@ -195,6 +195,33 @@ export async function executeCortexaTool(params: ExecuteToolParams): Promise<Mcp
                 return successResult(payload);
             }
 
+            case "cortexa_agent_list": {
+                const payload = await params.daemonClient.postJson("/cxlink/agent/list", {});
+                return successResult(payload);
+            }
+
+            case "cortexa_agent_run": {
+                const text = requiredString(args, "text", 24_000);
+                const agent = requiredString(args, "agent", 64);
+                if (!text || !agent) {
+                    return errorResult("Missing required fields: agent, text");
+                }
+
+                const payload = await params.daemonClient.postJson("/cxlink/agent/run", compactBody({
+                    agent,
+                    text,
+                    projectId: toTrimmedString(args.projectId, 256),
+                    branch: toTrimmedString(args.branch, 128),
+                    context: toTrimmedString(args.context, 24_000),
+                    dryRun: toBoolean(args.dryRun, true),
+                    topK: toBoundedInt(args.topK, 1, 40),
+                    maxChars: toBoundedInt(args.maxChars, 64, 32_000),
+                    existingSnippets: optionalStringArray(args, "existingSnippets", 40, 512)
+                }));
+
+                return successResult(payload);
+            }
+
             case "cortexa_temporal_query": {
                 const query = requiredString(args, "query", 16_384);
                 const projectId = requiredString(args, "projectId", 256);

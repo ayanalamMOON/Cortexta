@@ -39,6 +39,8 @@ jobs:
           pnpm run test:unit
           pnpm run test:observability
           pnpm run test:mcp
+          pnpm run test:session-resurrection
+          pnpm run test:agents-realistic
 
       - name: Build
         run: pnpm run build

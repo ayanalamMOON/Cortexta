@@ -12,7 +12,8 @@ import {
     metricsPath,
     metricsRequireAuth,
     renderMetrics,
-    setSelfHealingConsecutiveFailures
+    setSelfHealingConsecutiveFailures,
+    setSessionResurrectionConsecutiveFailures
 } from "./observability/metrics";
 import { daemonRequestObservabilityMiddleware } from "./observability/middleware";
 import { contextRouter } from "./routes/context";
@@ -25,6 +26,11 @@ import {
     startSelfHealingScheduler,
     stopSelfHealingScheduler
 } from "./self-healing";
+import {
+    getSessionResurrectionStatus,
+    startSessionResurrectionScheduler,
+    stopSessionResurrectionScheduler
+} from "./session-resurrection";
 import { startWsServer } from "./stream/ws-server";
 
 function readEnv(name: string): string | undefined {
@@ -173,7 +179,9 @@ export function createDaemonApp() {
 
     app.get("/health", (_req: any, res: any) => {
         const selfHealing = getSelfHealingStatus();
+        const sessionResurrection = getSessionResurrectionStatus();
         setSelfHealingConsecutiveFailures(selfHealing.consecutiveFailures);
+        setSessionResurrectionConsecutiveFailures(sessionResurrection.consecutiveFailures);
 
         res.json({
             ok: true,
@@ -207,6 +215,17 @@ export function createDaemonApp() {
                 lastOutcome: selfHealing.lastRun?.outcome,
                 runCount: selfHealing.runCount,
                 slo: selfHealing.slo
+            },
+            sessionResurrection: {
+                enabled: sessionResurrection.enabled,
+                started: sessionResurrection.started,
+                running: sessionResurrection.running,
+                nextRunAt: sessionResurrection.nextRunAt,
+                lastScheduledDelayMs: sessionResurrection.lastScheduledDelayMs,
+                consecutiveFailures: sessionResurrection.consecutiveFailures,
+                lastOutcome: sessionResurrection.lastRun?.outcome,
+                runCount: sessionResurrection.runCount,
+                slo: sessionResurrection.slo
             }
         });
     });
@@ -260,6 +279,8 @@ export function startDaemon(port = readPortEnv("CORTEXA_DAEMON_PORT", 4312), wsP
 
     startSelfHealingScheduler();
     setSelfHealingConsecutiveFailures(getSelfHealingStatus().consecutiveFailures);
+    startSessionResurrectionScheduler();
+    setSessionResurrectionConsecutiveFailures(getSessionResurrectionStatus().consecutiveFailures);
 
     let wss: ReturnType<typeof startWsServer> | null = null;
     try {
@@ -285,6 +306,8 @@ export function startDaemon(port = readPortEnv("CORTEXA_DAEMON_PORT", 4312), wsP
 
         stopSelfHealingScheduler();
         setSelfHealingConsecutiveFailures(getSelfHealingStatus().consecutiveFailures);
+        stopSessionResurrectionScheduler();
+        setSessionResurrectionConsecutiveFailures(getSessionResurrectionStatus().consecutiveFailures);
 
         if (wss) {
             try {

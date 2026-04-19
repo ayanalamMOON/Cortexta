@@ -9,6 +9,7 @@ export const evolveRouter = express.Router();
 async function respondWithProgression(params: {
     route: "evolve" | "evolve/progression";
     projectId?: string;
+    branch?: string;
     text: string;
     context?: string;
     dryRun: boolean;
@@ -16,6 +17,7 @@ async function respondWithProgression(params: {
 }): Promise<void> {
     const progression = await evolveMemoryWithProgression({
         projectId: params.projectId,
+        branch: params.branch,
         text: params.text,
         context: params.context,
         dryRun: params.dryRun
@@ -39,6 +41,7 @@ async function respondWithProgression(params: {
 evolveRouter.post("/progression", async (req: any, res: any) => {
     const body = toRecord(req.body);
     const projectId = toTrimmedString(body.projectId, 256);
+    const branch = toTrimmedString(body.branch, 128);
     const text = toTrimmedString(body.text, 24_000);
     const context = toTrimmedString(body.context, 24_000);
     const dryRun = toBoolean(body.dryRun, false);
@@ -55,6 +58,7 @@ evolveRouter.post("/progression", async (req: any, res: any) => {
         await respondWithProgression({
             route: "evolve/progression",
             projectId,
+            branch,
             text,
             context,
             dryRun,
@@ -71,6 +75,7 @@ evolveRouter.post("/progression", async (req: any, res: any) => {
 evolveRouter.post("/", async (req: any, res: any) => {
     const body = toRecord(req.body);
     const projectId = toTrimmedString(body.projectId, 256);
+    const branch = toTrimmedString(body.branch, 128);
     const text = toTrimmedString(body.text, 24_000);
     const context = toTrimmedString(body.context, 24_000);
     const dryRun = toBoolean(body.dryRun, false);
@@ -81,6 +86,7 @@ evolveRouter.post("/", async (req: any, res: any) => {
             await respondWithProgression({
                 route: "evolve",
                 projectId,
+                branch,
                 text,
                 context,
                 dryRun,

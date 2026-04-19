@@ -82,6 +82,7 @@ export function renderCliHome(options: CliHomeOptions = {}): string {
     lines.push(`  ${palette.success("$ pnpm run cortexa -- ingest . --project-id=my-project")}`);
     lines.push(`  ${palette.success("$ pnpm run cortexa -- query \"how did we solve retry jitter?\"")}`);
     lines.push(`  ${palette.success("$ pnpm run cortexa -- context \"prepare implementation plan\"")}`);
+    lines.push(`  ${palette.success("$ pnpm run cortexa -- agents list")}`);
     lines.push(`  ${palette.success("$ pnpm run cortexa -- evolve \"upgrade progression telemetry\" --project-id=my-project --dry-run")}`);
     lines.push("", palette.bold("Core commands"));
 
@@ -94,6 +95,7 @@ export function renderCliHome(options: CliHomeOptions = {}): string {
             },
             { command: "query <text>", description: "Run hybrid retrieval over memories." },
             { command: "context <text>", description: "Compile a token-bounded context payload." },
+            { command: "agents <list|run> [options]", description: "List/run Cortexa agents and multi-agent loops." },
             { command: "evolve <text> [options]", description: "Run progression evolution and emit stage telemetry." },
             { command: "daemon <start|stop|status>", description: "Control local daemon API runtime." }
         ])

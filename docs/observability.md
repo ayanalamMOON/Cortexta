@@ -8,9 +8,29 @@ This guide covers production observability for the CORTEXA daemon.
 
 ## What is included
 
-- **Structured JSON logs** from daemon HTTP and self-healing scheduler flows.
-- **Prometheus metrics export** (`/metrics`) for HTTP latency, request volume, in-flight traffic, and self-healing outcomes.
+- **Structured JSON logs** from daemon HTTP, self-healing, and session-resurrection scheduler flows.
+- **Prometheus metrics export** (`/metrics`) for HTTP latency, request volume, in-flight traffic, and scheduler outcomes.
 - **Health diagnostics** (`/health`) including observability configuration and scheduler telemetry.
+
+## Signal pipeline
+
+```mermaid
+flowchart LR
+  REQ[Client request] --> LOG[Structured JSON log]
+  REQ --> METRIC[Prometheus counters and histograms]
+  SCHED[Scheduler run] --> LOG
+  SCHED --> METRIC
+  LOG --> OPS[Operator investigation]
+  METRIC --> ALERT[Alerting and dashboards]
+```
+
+| Signal                       | Source                                         | Useful for                         |
+| ---------------------------- | ---------------------------------------------- | ---------------------------------- |
+| HTTP completion log          | daemon HTTP middleware                         | request triage and latency tracing |
+| Scheduler completion log     | self-healing and session-resurrection services | run outcome debugging              |
+| Request counter and duration | `/metrics`                                     | SLO and route health monitoring    |
+| Consecutive failure gauges   | `/metrics`                                     | scheduler degradation detection    |
+| `/health` status payload     | daemon health route                            | readiness and control-plane checks |
 
 ---
 
@@ -61,6 +81,9 @@ If `CORTEXA_DAEMON_TOKEN` is configured, metrics require token auth by default.
 - `cortexa_daemon_self_healing_runs_total{trigger,outcome}`
 - `cortexa_daemon_self_healing_run_duration_seconds{trigger,outcome}`
 - `cortexa_daemon_self_healing_consecutive_failures`
+- `cortexa_daemon_session_resurrection_runs_total{trigger,outcome}`
+- `cortexa_daemon_session_resurrection_run_duration_seconds{trigger,outcome}`
+- `cortexa_daemon_session_resurrection_consecutive_failures`
 
 ### Process/runtime metrics
 

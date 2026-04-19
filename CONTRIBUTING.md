@@ -23,6 +23,17 @@ Thanks for contributing to CORTEXA. This guide keeps changes reviewable, reliabl
    pnpm run typecheck
    ```
 
+   ## Contribution flow
+
+   ```mermaid
+   flowchart LR
+      A[Fork and branch from main] --> B[Implement focused change]
+      B --> C[Run local quality gates]
+      C --> D[Open PR with clear scope]
+      D --> E[Optional heavy gate label]
+      E --> F[Review and merge]
+   ```
+
 ## Branching model
 
 - Create feature branches from `main`.
@@ -43,6 +54,7 @@ pnpm run test:evolution
 pnpm run test:ingestion
 pnpm run test:compaction
 pnpm run test:self-healing
+pnpm run test:session-resurrection
 pnpm run test:daemons
 ```
 
@@ -55,6 +67,43 @@ pnpm run cortexa -- query "smoke"
 pnpm run cortexa -- context "smoke"
 pnpm run cortexa -- evolve "smoke" --dry-run --json
 ```
+
+### PR label contract: `ci:agents-realistic`
+
+CI includes a heavier integration gate (`Agents Realistic Gate`) that runs:
+
+```bash
+pnpm run test:agents-realistic
+```
+
+This gate runs automatically on pushes to `main`. For pull requests, it runs when the PR has label:
+
+- `ci:agents-realistic`
+
+Because it is intentionally heavier than baseline CI, request it when changes affect cross-surface agent behavior, including:
+
+- `core/agents/*` orchestration logic
+- `agents/*` planner/refactor/writer/critic/compressor behavior
+- daemon agent routes or stream events (`/cxlink/agent/*`, `agentStatus`)
+- daemon scheduler/stream events (`/cxlink/session-resurrection/*`, `sessionResurrectionStatus`)
+- evolution pipeline behavior used by `multi_agent_loop`
+- integration contracts spanning CLI + daemon + MCP agent surfaces
+
+Reviewer workflow:
+
+1. Add label `ci:agents-realistic` to trigger the gate on the PR.
+2. Remove label if the PR scope changes and the heavy gate is no longer needed.
+
+> Tip: run `pnpm run test:agents-realistic` locally before requesting the label to reduce CI churn.
+
+## Governance matrix
+
+| Change area                 | Minimum local checks                              | Optional extra check           |
+| --------------------------- | ------------------------------------------------- | ------------------------------ |
+| Core runtime / memory       | `typecheck`, `test:unit`, `test:compaction`       | `test:daemons`                 |
+| Daemon route / stream event | `typecheck`, `test:daemons`, `test:observability` | live smoke block in this guide |
+| MCP tool bridge             | `typecheck`, `test:mcp`                           | `test:agents-realistic`        |
+| Agent orchestration         | baseline quality gates                            | PR label `ci:agents-realistic` |
 
 ## Commit guidance
 

@@ -24,6 +24,7 @@ export * from "./graph/linker";
 export * from "./graph/traversal";
 export * from "./memory/consolidate";
 export * from "./memory/evolution/archivist.agent";
+export * from "./memory/evolution/compressor.agent";
 export * from "./memory/evolution/consolidator.agent";
 export * from "./memory/evolution/critic.agent";
 export * from "./memory/evolution/engine";

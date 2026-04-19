@@ -4,6 +4,26 @@ This guide outlines practical hardening controls for CORTEXA daemon and containe
 
 [← Back to README](../README.md)
 
+## Defense-in-depth model
+
+```mermaid
+flowchart TD
+  NET[Network boundary and TLS proxy] --> AUTH[Daemon token authentication]
+  AUTH --> RATE[Rate limiting]
+  RATE --> VALID[Input bounds and validation]
+  VALID --> RUNTIME[Container sandboxing]
+  RUNTIME --> RESP[Monitoring and incident response]
+```
+
+| Layer                  | Primary controls                             | Failure mode reduced                   |
+| ---------------------- | -------------------------------------------- | -------------------------------------- |
+| Edge/network           | TLS proxy, ACLs, private exposure            | unauthorized internet reachability     |
+| Identity               | `CORTEXA_DAEMON_TOKEN`, metrics auth         | unauthenticated API access             |
+| Abuse control          | request window and max limits                | brute-force and burst overload         |
+| Input safety           | bounded parsing and body limits              | malformed/oversized payload impact     |
+| Runtime isolation      | non-root containers, capability minimization | container breakout blast radius        |
+| Detection and response | logs, metrics, token rotation                | slow detection and prolonged incidents |
+
 ---
 
 ## 1) Authentication and access control

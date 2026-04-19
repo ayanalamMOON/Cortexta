@@ -96,6 +96,55 @@ const TOOL_DEFINITIONS: CortexaMcpToolDefinition[] = [
         mutation: false
     },
     {
+        name: "cortexa_agent_list",
+        description: "List all integrated Cortexa agents (heuristic, evolution, orchestrator).",
+        inputSchema: {
+            type: "object",
+            properties: {},
+            additionalProperties: false
+        },
+        mutation: false
+    },
+    {
+        name: "cortexa_agent_run",
+        description: "Run a specific Cortexa agent or the multi-agent loop.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                agent: {
+                    type: "string",
+                    enum: [
+                        "writer",
+                        "critic",
+                        "compressor",
+                        "planner",
+                        "refactor",
+                        "evolution_writer",
+                        "evolution_critic",
+                        "evolution_consolidator",
+                        "evolution_archivist",
+                        "multi_agent_loop"
+                    ]
+                },
+                text: { type: "string", minLength: 1, maxLength: 24000 },
+                projectId: { type: "string", maxLength: 256 },
+                branch: { type: "string", maxLength: 128 },
+                context: { type: "string", maxLength: 24000 },
+                dryRun: { type: "boolean" },
+                topK: { type: "integer", minimum: 1, maximum: 40 },
+                maxChars: { type: "integer", minimum: 64, maximum: 32000 },
+                existingSnippets: {
+                    type: "array",
+                    items: { type: "string", maxLength: 512 },
+                    maxItems: 40
+                }
+            },
+            required: ["agent", "text"],
+            additionalProperties: false
+        },
+        mutation: true
+    },
+    {
         name: "cortexa_temporal_query",
         description: "Run memory retrieval at a historical timestamp (time-travel query).",
         inputSchema: {

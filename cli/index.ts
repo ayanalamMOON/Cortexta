@@ -1,4 +1,5 @@
 import { doctor } from "../scripts/doctor";
+import { agentsCommand } from "./commands/agents";
 import { contextCommand } from "./commands/context";
 import { evolveCommand } from "./commands/evolve";
 import { ingestCommand } from "./commands/ingest";
@@ -55,6 +56,9 @@ export async function runCli(): Promise<void> {
             return;
         case "evolve":
             await evolveCommand(args.slice(1));
+            return;
+        case "agents":
+            await agentsCommand(args.slice(1));
             return;
         case "daemon": {
             const { daemonCommand } = require("./commands/daemon") as typeof import("./commands/daemon");

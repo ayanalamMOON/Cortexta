@@ -1,18 +1,20 @@
+import { CompressorAgent } from "../../packages/core/src/memory/evolution/compressor.agent";
+import { ConsolidatorAgent } from "../../packages/core/src/memory/evolution/consolidator.agent";
+import { CriticAgent } from "../../packages/core/src/memory/evolution/critic.agent";
 import {
     MemoryEvolutionEngine,
     type EvolutionMemoryStore,
     type EvolutionResult
 } from "../../packages/core/src/memory/evolution/engine";
-import { ConsolidatorAgent } from "../../packages/core/src/memory/evolution/consolidator.agent";
-import { CriticAgent } from "../../packages/core/src/memory/evolution/critic.agent";
 import { WriterAgent } from "../../packages/core/src/memory/evolution/writer.agent";
 import type { LLMClient } from "../../packages/core/src/types/llm";
 import type { MemoryAtom } from "../../packages/core/src/types/memory";
-import type { MemoryRecord } from "./memory.types";
 import { deleteMemory, searchMemories, upsertMemory } from "./memory.service";
+import type { MemoryRecord } from "./memory.types";
 
 export interface ProgressionEvolutionInput {
     projectId?: string;
+    branch?: string;
     text: string;
     context?: string;
     dryRun?: boolean;
@@ -50,11 +52,12 @@ function toMemoryAtom(record: MemoryRecord): MemoryAtom {
     };
 }
 
-function createEvolutionMemoryStore(projectId: string, persistWrites: boolean): EvolutionMemoryStore {
+function createEvolutionMemoryStore(projectId: string, branch: string, persistWrites: boolean): EvolutionMemoryStore {
     return {
         async searchSimilar(text: string, topK: number): Promise<MemoryAtom[]> {
             const matches = await searchMemories(text, {
                 projectId,
+                branch,
                 topK,
                 minScore: 0
             });
@@ -69,6 +72,7 @@ function createEvolutionMemoryStore(projectId: string, persistWrites: boolean): 
             await upsertMemory({
                 id: atom.id,
                 projectId: atom.projectId,
+                branch,
                 kind: atom.kind,
                 sourceType: atom.sourceType,
                 title: atom.title,
@@ -86,24 +90,29 @@ function createEvolutionMemoryStore(projectId: string, persistWrites: boolean): 
                 return;
             }
 
-            await deleteMemory(atomId);
+            await deleteMemory(atomId, {
+                projectId,
+                branch
+            });
         }
     };
 }
 
-function createEvolutionEngine(projectId: string, persistWrites: boolean): MemoryEvolutionEngine {
+function createEvolutionEngine(projectId: string, branch: string, persistWrites: boolean): MemoryEvolutionEngine {
     const writer = new WriterAgent(fallbackLlmClient);
     const critic = new CriticAgent(fallbackLlmClient);
+    const compressor = new CompressorAgent();
     const consolidator = new ConsolidatorAgent(fallbackLlmClient);
-    const store = createEvolutionMemoryStore(projectId, persistWrites);
+    const store = createEvolutionMemoryStore(projectId, branch, persistWrites);
 
-    return new MemoryEvolutionEngine(writer, critic, consolidator, store);
+    return new MemoryEvolutionEngine(writer, critic, consolidator, store, compressor);
 }
 
 export async function evolveMemoryWithProgression(
     input: ProgressionEvolutionInput
 ): Promise<ProgressionEvolutionOutput> {
     const projectId = (input.projectId ?? "").trim() || "default";
+    const branch = (input.branch ?? "").trim() || "main";
     const text = input.text.trim();
     const context = input.context?.trim();
     const dryRun = input.dryRun === true;
@@ -113,7 +122,7 @@ export async function evolveMemoryWithProgression(
         throw new Error("Missing required field: text");
     }
 
-    const engine = createEvolutionEngine(projectId, persistWrites);
+    const engine = createEvolutionEngine(projectId, branch, persistWrites);
     const result = await engine.evolveWithProgression({
         projectId,
         text,

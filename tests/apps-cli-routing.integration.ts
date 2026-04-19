@@ -22,6 +22,7 @@ function main(): void {
     assertPrimaryRoute(["daemon", "status"], "daemon commands should route to primary CLI");
     assertPrimaryRoute(["ingest", "."], "ingest should route to primary CLI");
     assertPrimaryRoute(["evolve", "upgrade", "progression"], "evolve should route to primary CLI");
+    assertPrimaryRoute(["agents", "list"], "agents should route to primary CLI");
     assertPrimaryRoute(["--", "memory", "stats"], "single delimiter should still route to primary CLI");
     assertPrimaryRoute(["--", "--", "memory", "stats"], "repeated delimiters should still route to primary CLI");
 

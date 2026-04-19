@@ -116,6 +116,22 @@ CREATE TABLE IF NOT EXISTS self_healing_run_history (
   createdAt INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS session_resurrection_run_history (
+  id TEXT PRIMARY KEY,
+  schedulerScope TEXT NOT NULL,
+  projectId TEXT,
+  branch TEXT NOT NULL,
+  trigger TEXT NOT NULL,
+  outcome TEXT NOT NULL,
+  dryRunOnly INTEGER NOT NULL DEFAULT 0,
+  reason TEXT,
+  startedAt INTEGER NOT NULL,
+  completedAt INTEGER NOT NULL,
+  durationMs INTEGER NOT NULL,
+  payload TEXT NOT NULL,
+  createdAt INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS memory_branches (
   id TEXT PRIMARY KEY,
   projectId TEXT NOT NULL,
@@ -194,6 +210,8 @@ CREATE INDEX IF NOT EXISTS idx_ingestion_sources_project_type ON memory_ingestio
 CREATE INDEX IF NOT EXISTS idx_ingestion_sources_project_ref ON memory_ingestion_sources(projectId, sourceType, sourceRef);
 CREATE INDEX IF NOT EXISTS idx_self_healing_history_scope_started ON self_healing_run_history(schedulerScope, startedAt DESC);
 CREATE INDEX IF NOT EXISTS idx_self_healing_history_scope_outcome_started ON self_healing_run_history(schedulerScope, outcome, startedAt DESC);
+CREATE INDEX IF NOT EXISTS idx_session_res_history_scope_started ON session_resurrection_run_history(schedulerScope, startedAt DESC);
+CREATE INDEX IF NOT EXISTS idx_session_res_history_scope_outcome_started ON session_resurrection_run_history(schedulerScope, outcome, startedAt DESC);
 CREATE INDEX IF NOT EXISTS idx_memory_branches_project_branch ON memory_branches(projectId, branch);
 CREATE INDEX IF NOT EXISTS idx_memory_branches_project_parent ON memory_branches(projectId, parentBranch);
 CREATE INDEX IF NOT EXISTS idx_branch_memories_project_branch_last_accessed ON memory_branch_memories(projectId, branch, lastAccessedAt DESC);
