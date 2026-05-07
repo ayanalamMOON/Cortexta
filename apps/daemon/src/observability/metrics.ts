@@ -28,6 +28,17 @@ interface SessionResurrectionRunMetricInput {
     consecutiveFailures?: number;
 }
 
+type ContextStreamEventType =
+    | "contextDeltaSuggested"
+    | "contextDeltaApplied"
+    | "contextDeltaSuppressed"
+    | "contextDeltaAcked"
+    | "contextDeltaExpired";
+
+interface ContextStreamSuppressionMetricInput {
+    reason: string;
+}
+
 const registry = new Registry();
 
 const httpRequestsTotal = new Counter({
@@ -90,6 +101,26 @@ const sessionResurrectionRunDurationSeconds = new Histogram({
 const sessionResurrectionConsecutiveFailuresGauge = new Gauge({
     name: "cortexa_daemon_session_resurrection_consecutive_failures",
     help: "Current consecutive session-resurrection failures.",
+    registers: [registry]
+});
+
+const contextStreamEventsTotal = new Counter({
+    name: "cortexa_daemon_context_stream_events_total",
+    help: "Total number of live context stream events by type.",
+    labelNames: ["event_type"] as const,
+    registers: [registry]
+});
+
+const contextStreamSuppressionsTotal = new Counter({
+    name: "cortexa_daemon_context_stream_suppressions_total",
+    help: "Total number of context stream suppressions by reason.",
+    labelNames: ["reason"] as const,
+    registers: [registry]
+});
+
+const contextStreamActiveStreamsGauge = new Gauge({
+    name: "cortexa_daemon_context_stream_active_streams",
+    help: "Current number of active live context streams.",
     registers: [registry]
 });
 
@@ -226,6 +257,35 @@ export function setSessionResurrectionConsecutiveFailures(value: number): void {
     sessionResurrectionConsecutiveFailuresGauge.set(Math.max(0, Math.trunc(value)));
 }
 
+export function recordContextStreamEventMetric(eventType: ContextStreamEventType): void {
+    if (!metricsConfig.enabled) {
+        return;
+    }
+
+    contextStreamEventsTotal.labels(eventType).inc();
+}
+
+export function recordContextStreamSuppressionMetric(reason: string): void {
+    if (!metricsConfig.enabled) {
+        return;
+    }
+
+    const normalizedReason = reason.trim() || "unknown";
+    contextStreamSuppressionsTotal.labels(normalizedReason).inc();
+}
+
+export function setContextStreamActiveStreams(value: number): void {
+    if (!metricsConfig.enabled) {
+        return;
+    }
+
+    if (!Number.isFinite(value)) {
+        return;
+    }
+
+    contextStreamActiveStreamsGauge.set(Math.max(0, Math.trunc(value)));
+}
+
 export async function renderMetrics(): Promise<{ contentType: string; payload: string }> {
     return {
         contentType: registry.contentType,
@@ -237,4 +297,5 @@ export function resetDaemonMetricsForTests(): void {
     registry.resetMetrics();
     selfHealingConsecutiveFailuresGauge.set(0);
     sessionResurrectionConsecutiveFailuresGauge.set(0);
+    contextStreamActiveStreamsGauge.set(0);
 }

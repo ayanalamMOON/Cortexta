@@ -7,8 +7,8 @@ import {
     type EvolutionResult
 } from "../../packages/core/src/memory/evolution/engine";
 import { WriterAgent } from "../../packages/core/src/memory/evolution/writer.agent";
-import type { LLMClient } from "../../packages/core/src/types/llm";
 import type { MemoryAtom } from "../../packages/core/src/types/memory";
+import { getCortexaLlmClient } from "../llm/cortexa-llm.service";
 import { deleteMemory, searchMemories, upsertMemory } from "./memory.service";
 import type { MemoryRecord } from "./memory.types";
 
@@ -27,11 +27,7 @@ export interface ProgressionEvolutionOutput {
     result: EvolutionResult;
 }
 
-const fallbackLlmClient: LLMClient = {
-    async completeJson<T>(): Promise<T> {
-        throw new Error("llm-not-configured");
-    }
-};
+const cortexaLlmClient = getCortexaLlmClient();
 
 function toMemoryAtom(record: MemoryRecord): MemoryAtom {
     return {
@@ -99,10 +95,10 @@ function createEvolutionMemoryStore(projectId: string, branch: string, persistWr
 }
 
 function createEvolutionEngine(projectId: string, branch: string, persistWrites: boolean): MemoryEvolutionEngine {
-    const writer = new WriterAgent(fallbackLlmClient);
-    const critic = new CriticAgent(fallbackLlmClient);
+    const writer = new WriterAgent(cortexaLlmClient);
+    const critic = new CriticAgent(cortexaLlmClient);
     const compressor = new CompressorAgent();
-    const consolidator = new ConsolidatorAgent(fallbackLlmClient);
+    const consolidator = new ConsolidatorAgent(cortexaLlmClient);
     const store = createEvolutionMemoryStore(projectId, branch, persistWrites);
 
     return new MemoryEvolutionEngine(writer, critic, consolidator, store, compressor);

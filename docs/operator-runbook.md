@@ -43,6 +43,12 @@ CORTEXA_VECTOR_PROVIDER=qdrant
 CORTEXA_VECTOR_URL=http://localhost:6333
 CORTEXA_DAEMON_TOKEN=replace-with-secure-token
 
+# Optional mini local LLM runtime
+CORTEXA_LLM_MODE=mini-local
+CORTEXA_LLM_MODEL_PATH=data/llm/cortexa-mini-llm.q8.json
+# Optional if llm train uses --hf-dataset and dataset requires auth
+CORTEXA_LLM_HF_TOKEN=replace-with-huggingface-token
+
 # Optional self-healing scheduler (safe by default)
 CORTEXA_SELF_HEAL_ENABLED=true
 CORTEXA_SELF_HEAL_PROJECT_ID=cortexta
@@ -111,6 +117,14 @@ pnpm run cortexa -- ingest . --project-id=cortexta --no-skip-unchanged
 pnpm run cortexa -- query "compaction dashboard"
 pnpm run cortexa -- context "explain how dashboard snapshots are persisted"
 pnpm run cortexa -- memory list --limit=5
+```
+
+### 5b) Train the local mini LLM (recommended for agent/evolution quality)
+
+```bash
+pnpm run cortexa -- llm status
+pnpm run cortexa -- llm train . --project-id=cortexta --max-vocab=4096 --max-transitions=24
+pnpm run cortexa -- llm preview "summarize memory progression and merge decisions"
 ```
 
 ### 6) Start daemon for API/MCP clients

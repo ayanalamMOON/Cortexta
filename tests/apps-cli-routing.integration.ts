@@ -20,11 +20,13 @@ function main(): void {
     assertPrimaryRoute(["doctor"], "doctor should route to primary CLI");
     assertPrimaryRoute(["dashboard", "--json"], "dashboard alias should route to primary CLI");
     assertPrimaryRoute(["daemon", "status"], "daemon commands should route to primary CLI");
+    assertPrimaryRoute(["llm", "status"], "llm commands should route to primary CLI");
     assertPrimaryRoute(["ingest", "."], "ingest should route to primary CLI");
     assertPrimaryRoute(["evolve", "upgrade", "progression"], "evolve should route to primary CLI");
     assertPrimaryRoute(["agent", "list"], "agent alias should route to primary CLI");
     assertPrimaryRoute(["agents", "list"], "agents should route to primary CLI");
     assertPrimaryRoute(["--daemon", "start"], "--daemon alias should route to primary CLI daemon command");
+    assertPrimaryRoute(["--llm", "status"], "--llm alias should route to primary CLI llm command");
     assertPrimaryRoute(["--", "memory", "stats"], "single delimiter should still route to primary CLI");
     assertPrimaryRoute(["--", "--", "memory", "stats"], "repeated delimiters should still route to primary CLI");
 
@@ -39,6 +41,13 @@ function main(): void {
         normalizedDashCommand.slice(2),
         ["daemon", "start"],
         "normalizeArgv should map --daemon to daemon"
+    );
+
+    const normalizedLlmCommand = normalizeArgv(argv("--llm", "status"));
+    assert.deepEqual(
+        normalizedLlmCommand.slice(2),
+        ["llm", "status"],
+        "normalizeArgv should map --llm to llm"
     );
 
     console.log("✅ apps CLI routing integration test passed");

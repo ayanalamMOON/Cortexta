@@ -25,6 +25,7 @@ pnpm-debug.log*
 # Temporary export folders
 .tmp/
 tmp/
+site/
 
 # ------------------------------
 # Environment / secrets
@@ -40,6 +41,9 @@ tmp/
 # ------------------------------
 .venv/
 venv/
+__pycache__/
+*.pyc
+*.pyo
 
 # ------------------------------
 # SQLite and local DB files

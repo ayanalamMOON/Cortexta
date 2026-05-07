@@ -83,6 +83,7 @@ export function renderCliHome(options: CliHomeOptions = {}): string {
     lines.push(`  ${palette.muted("  projectId auto-inferred from folder name (override with --project-id=<id>)")}`);
     lines.push(`  ${palette.success("$ pnpm run cortexa -- query \"how did we solve retry jitter?\"")}`);
     lines.push(`  ${palette.success("$ pnpm run cortexa -- context \"prepare implementation plan\"")}`);
+    lines.push(`  ${palette.success("$ pnpm run cortexa -- llm status")}`);
     lines.push(`  ${palette.success("$ pnpm run cortexa -- agents list")}`);
     lines.push(`  ${palette.success("$ pnpm run cortexa -- evolve \"upgrade progression telemetry\" --project-id=my-project --dry-run")}`);
     lines.push("", palette.bold("Core commands"));
@@ -93,6 +94,10 @@ export function renderCliHome(options: CliHomeOptions = {}): string {
             {
                 command: "ingest [path] [options]",
                 description: "Ingest code and optional chats; projectId auto-inferred unless overridden."
+            },
+            {
+                command: "llm <status|train|preview> [options]",
+                description: "Train/use the quantized local mini LLM for agent-memory workflows."
             },
             { command: "query <text>", description: "Run hybrid retrieval over memories." },
             { command: "context <text>", description: "Compile a token-bounded context payload." },

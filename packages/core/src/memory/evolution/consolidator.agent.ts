@@ -9,6 +9,12 @@ export interface ConsolidatedMemory {
     confidence: number;
 }
 
+function shouldRequireRealLlm(): boolean {
+    const raw = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.CORTEXA_LLM_REQUIRE_REAL;
+    const normalized = String(raw ?? "").trim().toLowerCase();
+    return ["1", "true", "yes", "on"].includes(normalized);
+}
+
 export class ConsolidatorAgent {
     constructor(private readonly llm: LLMClient) { }
 
@@ -19,7 +25,11 @@ export class ConsolidatorAgent {
                 user: JSON.stringify(input),
                 schemaHint: "{ title, summary, content, tags, confidence }"
             });
-        } catch {
+        } catch (error) {
+            if (shouldRequireRealLlm()) {
+                throw error;
+            }
+
             return {
                 title: input.candidate.title,
                 summary: input.candidate.summary,

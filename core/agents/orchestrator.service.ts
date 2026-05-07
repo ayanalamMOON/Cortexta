@@ -7,9 +7,9 @@ import { ArchivistAgent } from "../../packages/core/src/memory/evolution/archivi
 import { ConsolidatorAgent } from "../../packages/core/src/memory/evolution/consolidator.agent";
 import { CriticAgent } from "../../packages/core/src/memory/evolution/critic.agent";
 import { WriterAgent } from "../../packages/core/src/memory/evolution/writer.agent";
-import type { LLMClient } from "../../packages/core/src/types/llm";
 import type { MemoryAtom } from "../../packages/core/src/types/memory";
 import { randomId } from "../../packages/core/src/utils/ids";
+import { getCortexaLlmClient } from "../llm/cortexa-llm.service";
 import { evolveMemoryWithProgression } from "../mempalace/evolution.service";
 import { searchMemories } from "../mempalace/memory.service";
 
@@ -53,11 +53,7 @@ export interface RunCortexaAgentOutput {
     output: unknown;
 }
 
-const fallbackLlmClient: LLMClient = {
-    async completeJson<T>(): Promise<T> {
-        throw new Error("llm-not-configured");
-    }
-};
+const cortexaLlmClient = getCortexaLlmClient();
 
 const AGENT_CATALOG: CortexaAgentDescriptor[] = [
     {
@@ -356,7 +352,7 @@ export async function runCortexaAgent(input: RunCortexaAgentInput): Promise<RunC
         }
 
         case "evolution_writer": {
-            const writer = new WriterAgent(fallbackLlmClient);
+            const writer = new WriterAgent(cortexaLlmClient);
             const proposed = await writer.propose({
                 projectId,
                 text,
@@ -377,7 +373,7 @@ export async function runCortexaAgent(input: RunCortexaAgentInput): Promise<RunC
 
         case "evolution_critic": {
             const draft = writerAgentDraft(text);
-            const critic = new CriticAgent(fallbackLlmClient);
+            const critic = new CriticAgent(cortexaLlmClient);
             const snippets = await resolveExistingSnippets({
                 text,
                 projectId,
@@ -407,7 +403,7 @@ export async function runCortexaAgent(input: RunCortexaAgentInput): Promise<RunC
         }
 
         case "evolution_consolidator": {
-            const consolidator = new ConsolidatorAgent(fallbackLlmClient);
+            const consolidator = new ConsolidatorAgent(cortexaLlmClient);
             const candidate = makeCandidateAtom(projectId, text);
             const neighborsRaw = await searchMemories(text, {
                 projectId,

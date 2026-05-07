@@ -6,6 +6,12 @@ export interface WriterOutput {
     candidates: Array<Pick<MemoryAtom, "kind" | "title" | "summary" | "content" | "tags" | "sourceRef">>;
 }
 
+function shouldRequireRealLlm(): boolean {
+    const raw = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.CORTEXA_LLM_REQUIRE_REAL;
+    const normalized = String(raw ?? "").trim().toLowerCase();
+    return ["1", "true", "yes", "on"].includes(normalized);
+}
+
 function isMemoryKind(value: unknown): value is MemoryAtom["kind"] {
     return (
         value === "episodic" ||
@@ -105,7 +111,11 @@ export class WriterAgent {
             });
 
             return normalizeWriterOutput(output, input.projectId);
-        } catch {
+        } catch (error) {
+            if (shouldRequireRealLlm()) {
+                throw error;
+            }
+
             return normalizeWriterOutput(fallback, input.projectId);
         }
     }

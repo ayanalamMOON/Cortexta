@@ -12,6 +12,12 @@ export interface CriticOutput {
     mergeKey?: string;
 }
 
+function shouldRequireRealLlm(): boolean {
+    const raw = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.CORTEXA_LLM_REQUIRE_REAL;
+    const normalized = String(raw ?? "").trim().toLowerCase();
+    return ["1", "true", "yes", "on"].includes(normalized);
+}
+
 function clamp01(value: number): number {
     return Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
 }
@@ -111,7 +117,11 @@ export class CriticAgent {
             });
 
             return normalizeReview(output, fallback);
-        } catch {
+        } catch (error) {
+            if (shouldRequireRealLlm()) {
+                throw error;
+            }
+
             return fallback;
         }
     }

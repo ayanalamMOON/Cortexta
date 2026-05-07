@@ -16,6 +16,7 @@ export * from "./cxlink/adapter";
 export * from "./cxlink/cxf-format";
 export * from "./cxlink/hub";
 export * from "./cxlink/policies";
+export * from "./daemon/context-stream-client";
 export * from "./embeddings/embedder";
 export * from "./embeddings/reranker";
 export * from "./embeddings/vector-store";

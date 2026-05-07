@@ -57,6 +57,7 @@ pnpm run test:compaction
 pnpm run test:self-healing
 pnpm run test:session-resurrection
 pnpm run test:daemons
+pnpm run test:llm
 ```
 
 For daemon/API route changes, also run a quick live smoke check:

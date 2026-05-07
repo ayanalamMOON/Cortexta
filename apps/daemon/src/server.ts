@@ -1,6 +1,7 @@
 import express from "express";
 import rateLimit from "express-rate-limit";
 import { toPort, toTrimmedString } from "../../../core/daemon/http";
+import { getContextStreamController } from "./context-stream/service";
 import { readDaemonObservabilityConfigFromEnv } from "./observability/config";
 import {
     configureDaemonLogger,
@@ -17,6 +18,7 @@ import {
 } from "./observability/metrics";
 import { daemonRequestObservabilityMiddleware } from "./observability/middleware";
 import { contextRouter } from "./routes/context";
+import { contextStreamRouter } from "./routes/context-stream";
 import { cxlinkRouter } from "./routes/cxlink";
 import { evolveRouter } from "./routes/evolve";
 import { ingestRouter } from "./routes/ingest";
@@ -180,6 +182,7 @@ export function createDaemonApp() {
     app.get("/health", (_req: any, res: any) => {
         const selfHealing = getSelfHealingStatus();
         const sessionResurrection = getSessionResurrectionStatus();
+        const contextStream = getContextStreamController().status();
         setSelfHealingConsecutiveFailures(selfHealing.consecutiveFailures);
         setSessionResurrectionConsecutiveFailures(sessionResurrection.consecutiveFailures);
 
@@ -226,6 +229,11 @@ export function createDaemonApp() {
                 lastOutcome: sessionResurrection.lastRun?.outcome,
                 runCount: sessionResurrection.runCount,
                 slo: sessionResurrection.slo
+            },
+            contextStream: {
+                enabled: contextStream.enabled,
+                running: contextStream.running,
+                streams: contextStream.streams
             }
         });
     });
@@ -235,6 +243,7 @@ export function createDaemonApp() {
     app.use("/ingest", ingestRouter);
     app.use("/query", queryRouter);
     app.use("/context", contextRouter);
+    app.use("/context/stream", contextStreamRouter);
     app.use("/cxlink", cxlinkRouter);
     app.use("/evolve", evolveRouter);
 
@@ -281,6 +290,7 @@ export function startDaemon(port = readPortEnv("CORTEXA_DAEMON_PORT", 4312), wsP
     setSelfHealingConsecutiveFailures(getSelfHealingStatus().consecutiveFailures);
     startSessionResurrectionScheduler();
     setSessionResurrectionConsecutiveFailures(getSessionResurrectionStatus().consecutiveFailures);
+    void getContextStreamController().autoStartFromEnv();
 
     let wss: ReturnType<typeof startWsServer> | null = null;
     try {

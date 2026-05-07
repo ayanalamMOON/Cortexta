@@ -29,6 +29,7 @@ const PRIMARY_CLI_COMMANDS = new Set([
     "context",
     "agent",
     "agents",
+    "llm",
     "evolve",
     "daemon",
     "memory",

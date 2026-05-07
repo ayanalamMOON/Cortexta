@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { connectSqlite, initializeSqlite } from "../../storage/sqlite/db";
+import { suggestCortexaTags } from "../llm/cortexa-llm.service";
 import { deleteMemoriesByIds, upsertMemory } from "../mempalace/memory.service";
 import { parseCode } from "./code.parser";
 import { parseCopilotSession } from "./copilot.parser";
@@ -75,6 +76,9 @@ const DEFAULT_MAX_CHUNK_CHARS = 1400;
 const DEFAULT_MAX_FILE_BYTES = 768 * 1024;
 const DEFAULT_MAX_CHAT_FILES = 400;
 const DEFAULT_SKIP_UNCHANGED = true;
+const DEFAULT_AUTO_TAGGING_ENABLED = true;
+const DEFAULT_AUTO_TAG_MAX_TAGS = 6;
+const DEFAULT_MAX_MEMORY_TAGS = 24;
 const INGEST_VERSION = "ingest-v2";
 const MAIN_BRANCH = "main";
 const CHAT_TRANSCRIPT_DIRS = [
@@ -116,6 +120,51 @@ function toNonNegativeInteger(value: unknown): number | undefined {
         return undefined;
     }
     return Math.floor(parsed);
+}
+
+function parseBooleanEnv(value: string | undefined, fallback: boolean): boolean {
+    if (typeof value !== "string") {
+        return fallback;
+    }
+
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) {
+        return fallback;
+    }
+
+    if (["1", "true", "yes", "on"].includes(normalized)) {
+        return true;
+    }
+
+    if (["0", "false", "no", "off"].includes(normalized)) {
+        return false;
+    }
+
+    return fallback;
+}
+
+function mergeTags(primary: string[], secondary: string[], maxTags = DEFAULT_MAX_MEMORY_TAGS): string[] {
+    return [...new Set([...primary, ...secondary])].slice(0, maxTags);
+}
+
+async function suggestAutoTags(
+    enabled: boolean,
+    text: string,
+    maxTags: number,
+    projectId?: string
+): Promise<string[]> {
+    if (!enabled) {
+        return [];
+    }
+
+    try {
+        return await suggestCortexaTags(text, {
+            maxTags,
+            projectId
+        });
+    } catch {
+        return [];
+    }
 }
 
 function stableId(prefix: string, parts: Array<string | number | undefined>): string {
@@ -651,6 +700,11 @@ export async function runIngestion(input: IngestInput): Promise<IngestionResult>
     const maxFileBytes = toPositiveInteger(readEnv("CORTEXA_INGEST_MAX_FILE_BYTES")) ?? DEFAULT_MAX_FILE_BYTES;
     const maxChatFiles = toPositiveInteger(input.maxChatFiles) ?? DEFAULT_MAX_CHAT_FILES;
     const skipUnchanged = input.skipUnchanged !== false ? DEFAULT_SKIP_UNCHANGED : false;
+    const autoTaggingEnabled = parseBooleanEnv(
+        readEnv("CORTEXA_LLM_AUTO_TAGGING"),
+        DEFAULT_AUTO_TAGGING_ENABLED
+    );
+    const autoTagMaxTags = toPositiveInteger(readEnv("CORTEXA_LLM_AUTO_TAG_MAX_TAGS")) ?? DEFAULT_AUTO_TAG_MAX_TAGS;
 
     const result: IngestionResult = {
         filesScanned: 0,
@@ -733,6 +787,14 @@ export async function runIngestion(input: IngestInput): Promise<IngestionResult>
 
                     result.codeChunks += 1;
 
+                    const baseTags = [...new Set([...chunk.tags, parsed.language, `file:${sourceRef}`])];
+                    const autoTags = await suggestAutoTags(
+                        autoTaggingEnabled,
+                        `${segmentedTitle}\n${segmentedSummary}\n${segment}`,
+                        autoTagMaxTags,
+                        projectId
+                    );
+
                     await upsertMemory({
                         id: memoryId,
                         projectId,
@@ -742,7 +804,7 @@ export async function runIngestion(input: IngestInput): Promise<IngestionResult>
                         title: segmentedTitle,
                         summary: segmentedSummary,
                         content: segment,
-                        tags: [...new Set([...chunk.tags, parsed.language, `file:${sourceRef}`])],
+                        tags: mergeTags(baseTags, autoTags),
                         importance: parsed.facts.functions.length > 0 ? 0.72 : 0.58,
                         confidence: 0.7,
                         sourceRef
@@ -824,6 +886,13 @@ export async function runIngestion(input: IngestInput): Promise<IngestionResult>
                     result.chatTurns += 1;
 
                     const fileTags = (turn.files ?? []).slice(0, 25).map((file) => `file:${normalizeSlashes(String(file))}`);
+                    const baseTags = [...new Set(["copilot", "chat", `chat-file:${sourceRef}`, ...fileTags])];
+                    const autoTags = await suggestAutoTags(
+                        autoTaggingEnabled,
+                        `${summary}\n${prompt}\n${response}`,
+                        autoTagMaxTags,
+                        projectId
+                    );
                     const memoryId = stableId("chat", [projectId, sourceRef, turnIndex, turn.timestamp, prompt, response]);
 
                     await upsertMemory({
@@ -835,7 +904,7 @@ export async function runIngestion(input: IngestInput): Promise<IngestionResult>
                         title: "Copilot Interaction",
                         summary,
                         content: `${prompt}\n\n---\n\n${response}`.trim(),
-                        tags: [...new Set(["copilot", "chat", `chat-file:${sourceRef}`, ...fileTags])],
+                        tags: mergeTags(baseTags, autoTags),
                         importance: 0.65,
                         confidence: 0.75,
                         sourceRef

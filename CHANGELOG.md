@@ -26,6 +26,9 @@ flowchart LR
 - No-args primary CLI interactive shell mode (`pnpm run cortexa`) that starts daemon by default and accepts inline commands.
 - Top-level command normalization for `--<command>` forms and `agent` alias routing to `agents`.
 - Ingestion scope integration coverage (`test:ingestion-scope`) validating workspace-scoped chat ingestion and `.venv` skip behavior.
+- Quantized local mini LLM runtime (`core/llm/mini-llm.service.ts`) with compact n-gram inference and schema-aware JSON completions.
+- New primary CLI command surface for local model workflows: `llm status`, `llm train`, and `llm preview`.
+- Mini LLM integration coverage (`test:llm`) to verify train/status/inference and writer/critic/consolidator schema responses.
 
 ### Changed
 
@@ -34,6 +37,7 @@ flowchart LR
 - Ingestion pipeline now skips common heavy local/runtime directories (`.venv`, `venv`, `.cache`, `target`, etc.).
 - Copilot chat transcript discovery now prefers current workspace-scoped `workspaceStorage` before broader root fallback.
 - Documentation refreshed across README/runbook/API/contributing to match current CLI and ingestion behavior.
+- Evolution writer/critic/consolidator orchestration now uses the local mini LLM client instead of throw-only fallback stubs.
 
 ### Fixed
 

@@ -9,6 +9,7 @@ async function main(): Promise<void> {
     const tempDbPath = path.join(tempRoot, "cortexa-ingest-scope.db");
     const projectPath = path.join(tempRoot, "project");
     const workspaceStorageRoot = path.join(tempRoot, "workspaceStorage");
+    const projectId = "ingestion-workspace-scope-test";
 
     const originalAppData = process.env.APPDATA;
     const originalHome = process.env.HOME;
@@ -95,13 +96,18 @@ async function main(): Promise<void> {
         }>;
     };
 
-    const { closeSqlite } = require("../storage/sqlite/db") as {
+    const { closeSqlite, connectSqlite } = require("../storage/sqlite/db") as {
         closeSqlite: () => void;
+        connectSqlite: () => {
+            prepare: (sql: string) => {
+                get<T = Record<string, unknown>>(...params: unknown[]): T | undefined;
+            };
+        };
     };
 
     const result = await runIngestion({
         projectPath,
-        projectId: "ingestion-workspace-scope-test",
+        projectId,
         includeChats: true,
         skipUnchanged: false,
         chatSearchRoots: [workspaceStorageRoot]
@@ -113,6 +119,66 @@ async function main(): Promise<void> {
     assert.equal(result.chatTurns, 1, "matching workspace chat transcript should yield one turn");
     assert.ok(result.memoriesStored >= 2, "ingestion should store both code and chat memories");
     assert.equal(result.errors.length, 0, "ingestion should complete without parse errors");
+
+    const sqlite = connectSqlite();
+
+    const parseTags = (serialized: unknown): string[] => {
+        if (typeof serialized !== "string" || !serialized.trim()) {
+            return [];
+        }
+
+        try {
+            const parsed = JSON.parse(serialized) as unknown;
+            if (!Array.isArray(parsed)) {
+                return [];
+            }
+
+            return parsed.map((entry) => String(entry)).filter(Boolean);
+        } catch {
+            return [];
+        }
+    };
+
+    const codeRow = sqlite
+        .prepare(
+            `
+            SELECT tags
+            FROM memories
+            WHERE projectId = ?
+              AND kind = 'code_entity'
+            ORDER BY lastAccessedAt DESC
+            LIMIT 1
+          `
+        )
+        .get<{ tags?: unknown }>(projectId);
+
+    const chatRow = sqlite
+        .prepare(
+            `
+            SELECT tags
+            FROM memories
+            WHERE projectId = ?
+              AND kind = 'chat_turn'
+            ORDER BY lastAccessedAt DESC
+            LIMIT 1
+          `
+        )
+        .get<{ tags?: unknown }>(projectId);
+
+    const codeTags = parseTags(codeRow?.tags);
+    const chatTags = parseTags(chatRow?.tags);
+
+    assert.ok(codeTags.length > 0, "code memory should persist tags");
+    assert.ok(chatTags.length > 0, "chat memory should persist tags");
+
+    const codeBaseTags = new Set(["typescript", "code", "function", "file:src/main.ts"]);
+    const hasCodeAutoTag = codeTags.some((tag) => !codeBaseTags.has(tag) && !tag.startsWith("file:"));
+    assert.ok(hasCodeAutoTag, "ingestion should auto-enrich code memory tags");
+
+    const hasChatAutoTag = chatTags.some(
+        (tag) => tag !== "copilot" && tag !== "chat" && !tag.startsWith("chat-file:") && !tag.startsWith("file:")
+    );
+    assert.ok(hasChatAutoTag, "ingestion should auto-enrich chat memory tags");
 
     closeSqlite();
 

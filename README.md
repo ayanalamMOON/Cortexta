@@ -28,6 +28,7 @@ This README is fully updated for:
 - intent-aware proactive context suggestions and daemon stream events (`contextSuggested`, `branchSwitched`, `agentStatus`, `sessionResurrectionStatus`)
 - ingestion defaults + performance hardening (optional path/projectId inference, workspace-scoped chat discovery, expanded skip dirs, vector retry cooldown)
 - unified agent orchestration surface (planner/refactor/writer/critic/compressor + evolution and multi-agent loop)
+- quantized local mini LLM service (`llm train/status/preview`) integrated into evolution writer/critic/consolidator flows
 
 ## System map
 
@@ -116,6 +117,7 @@ flowchart LR
 ```text
 Primary CLI (cortexa)
   ├── ingest        (code/chat ingestion)
+  ├── llm           (quantized local mini LLM training + preview)
   ├── query         (hybrid retrieval)
   ├── context       (token-bounded context compile)
   ├── agents        (list/run unified Cortexa agents)
@@ -176,6 +178,9 @@ pnpm run typecheck
 ```bash
 pnpm install
 pnpm run doctor
+
+# 0) train (or refresh) the quantized mini local model
+pnpm run cortexa -- llm train . --project-id=my-project
 
 # optional: interactive mode (starts daemon by default)
 pnpm run cortexa
@@ -274,6 +279,22 @@ Hybrid memory retrieval.
 pnpm run cortexa -- query "how did we harden websocket streaming?"
 pnpm run cortexa -- query "why is auth flow failing" --project-id=my-service --branch=feature/auth --top-k=12 --min-score=0.4 --as-of=1713433000000
 ```
+
+#### `llm`
+
+Train and inspect the quantized local mini LLM used by progression/evolution agents.
+
+```bash
+pnpm run cortexa -- llm status
+pnpm run cortexa -- llm train . --project-id=my-service --max-vocab=4096 --max-transitions=24
+pnpm run cortexa -- llm train . --hf-dataset=HuggingFaceH4/ultrachat_200k --hf-rows=120
+pnpm run cortexa -- llm preview "summarize progression telemetry stages" --max-tokens=96
+```
+
+Notes:
+- `llm train` builds a compact quantized n-gram model at `data/llm/cortexa-mini-llm.q8.json` by default.
+- Training corpus can combine project files, memory rows, and optional Hugging Face dataset rows.
+- Set `CORTEXA_LLM_HF_TOKEN` (or `HUGGINGFACE_TOKEN`) if your dataset endpoint requires auth.
 
 #### `context`
 
@@ -550,6 +571,12 @@ The daemon health payload now includes summarized self-healing and session-resur
 
 - `CORTEXA_INGEST_MAX_FILE_BYTES` (default: `786432`)
 
+### Local mini LLM
+
+- `CORTEXA_LLM_MODE` (`mini-local` default, set `disabled`/`off` to bypass)
+- `CORTEXA_LLM_MODEL_PATH` (default `data/llm/cortexa-mini-llm.q8.json`)
+- `CORTEXA_LLM_HF_TOKEN` (optional Hugging Face token for dataset row fetch during training)
+
 ### Compaction tuning
 
 - `CORTEXA_MEM_COMPACT_MIN_CHARS`
@@ -660,6 +687,7 @@ pnpm run test:session-resurrection
 pnpm run test:compaction
 pnpm run test:branch-temporal
 pnpm run test:agents-realistic
+pnpm run test:llm
 pnpm run test:daemons
 ```
 
@@ -723,7 +751,9 @@ pnpm run test:ingestion-scope
 pnpm run test:compaction
 pnpm run test:branch-temporal
 pnpm run test:agents-realistic
+pnpm run test:llm
 pnpm run test:daemons
+pnpm run llm:train
 pnpm run cortexa -- <command>
 pnpm run cortexa:daemon
 pnpm run cortexa:mcp

@@ -7,7 +7,16 @@ function nextStep(): number {
 
 export function emitDaemonStreamEvent(params: {
     projectId?: string;
-    eventType: "contextSuggested" | "branchSwitched" | "agentStatus" | "sessionResurrectionStatus";
+    eventType:
+    | "contextSuggested"
+    | "contextDeltaSuggested"
+    | "contextDeltaApplied"
+    | "contextDeltaSuppressed"
+    | "contextDeltaAcked"
+    | "contextDeltaExpired"
+    | "branchSwitched"
+    | "agentStatus"
+    | "sessionResurrectionStatus";
     payload: Record<string, unknown>;
     sessionId?: string;
 }): StreamDelta {

@@ -5,6 +5,7 @@ import { contextCommand } from "./commands/context";
 import { evolveCommand } from "./commands/evolve";
 import { ingestCommand } from "./commands/ingest";
 import { initCommand } from "./commands/init";
+import { llmCommand } from "./commands/llm";
 import { memoryCommand } from "./commands/memory";
 import { queryCommand } from "./commands/query";
 import { renderCliHome } from "./utils/home";
@@ -24,6 +25,7 @@ const TOP_LEVEL_COMMANDS = new Set([
     "context",
     "agent",
     "agents",
+    "llm",
     "evolve",
     "daemon",
     "memory",
@@ -166,6 +168,9 @@ async function runCommand(args: string[]): Promise<void> {
             return;
         case "agent":
             await agentsCommand(args.slice(1));
+            return;
+        case "llm":
+            await llmCommand(args.slice(1));
             return;
         case "daemon": {
             const { daemonCommand } = require("./commands/daemon") as typeof import("./commands/daemon");
