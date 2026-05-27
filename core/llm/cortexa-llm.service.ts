@@ -4,6 +4,7 @@ import path from "node:path";
 import type { LLMClient } from "../../packages/core/src/types/llm";
 import {
     getCortexaLlmClient as getMiniLlmClient,
+    getMiniLlmStatus,
     suggestMiniLlmTags,
     type MiniLlmTagOptions
 } from "./mini-llm.service";
@@ -26,6 +27,19 @@ interface QwenTagRequest {
     max_tags: number;
 }
 
+export interface CortexaLlmRuntimeStatus {
+    mode: CortexaLlmMode;
+    strictRemote: boolean;
+    effectiveTimeoutMs: number;
+    effectiveJsonMaxTokens: number;
+    serviceUrl: string;
+    serviceReachable: boolean;
+    modelPathDetected?: string;
+    lastSuccessAt?: number;
+    lastError?: string;
+    diagnosticHints: string[];
+}
+
 const DEFAULT_QWEN_SERVICE_URL = "http://127.0.0.1:8000";
 const DEFAULT_QWEN_TIMEOUT_MS = 60_000;
 const DEFAULT_QWEN_MAX_JSON_TOKENS = 160;
@@ -34,6 +48,9 @@ const TAG_PATTERN = /^[a-z][a-z0-9_-]{1,23}$/;
 
 const miniClient = getMiniLlmClient();
 let localServiceStartPromise: Promise<void> | null = null;
+let lastSuccessAt: number | null = null;
+let lastError: string | null = null;
+let lastErrorAt: number | null = null;
 
 function readEnv(name: string): string | undefined {
     return (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.[name];
@@ -63,6 +80,16 @@ function parseBoundedInt(value: string | undefined, fallback: number, min: numbe
     }
 
     return Math.min(max, Math.max(min, Math.trunc(parsed)));
+}
+
+function recordLlmSuccess(): void {
+    lastSuccessAt = Date.now();
+}
+
+function recordLlmError(error: unknown): void {
+    const message = error instanceof Error ? error.message : String(error);
+    lastError = message;
+    lastErrorAt = Date.now();
 }
 
 function delay(ms: number): Promise<void> {
@@ -178,6 +205,46 @@ async function isQwenServiceReachable(baseUrl: string, timeoutMs: number): Promi
     } finally {
         clearTimeout(timer);
     }
+}
+
+function buildDiagnosticHints(
+    config: CortexaLlmConfig,
+    miniStatus: ReturnType<typeof getMiniLlmStatus>,
+    serviceReachable: boolean
+): string[] {
+    const hints: string[] = [];
+    const { isLocal } = parseServiceUrl(config.qwenServiceUrl);
+
+    if (config.mode === "disabled") {
+        hints.push("LLM mode is disabled. Set CORTEXA_LLM_MODE=mini-local|qwen-http|auto to enable.");
+    }
+
+    if ((config.mode === "mini-local" || config.mode === "auto") && miniStatus.enabled && !miniStatus.modelExists) {
+        hints.push("Mini LLM model not found. Run `cortexa llm train` to create a local model.");
+    }
+
+    if ((config.mode === "qwen-http" || config.mode === "auto") && !serviceReachable) {
+        hints.push(`Qwen service is not reachable at ${config.qwenServiceUrl}.`);
+    }
+
+    if ((config.mode === "qwen-http" || config.mode === "auto") && isLocal && !config.autoStartLocalService) {
+        hints.push("Auto-start for local Qwen service is disabled. Start it manually or set CORTEXA_QWEN_AUTO_START=true.");
+    }
+
+    if (config.mode === "auto" && config.strictRemote) {
+        hints.push("Strict remote is enabled; auto mode will not fall back to mini-local on Qwen failure.");
+    }
+
+    if (lastError) {
+        const errorSuffix = lastErrorAt ? ` (at ${new Date(lastErrorAt).toISOString()})` : "";
+        hints.push(`Last error: ${lastError}${errorSuffix}`);
+
+        if (lastSuccessAt && lastErrorAt && lastSuccessAt > lastErrorAt) {
+            hints.push("A successful LLM call occurred after the last error; the failure may have been transient.");
+        }
+    }
+
+    return hints;
 }
 
 function resolveSpawnTimeoutSeconds(config: CortexaLlmConfig): number {
@@ -424,7 +491,7 @@ export async function suggestCortexaTags(
     const shouldUseQwen = config.mode === "qwen-http" || config.mode === "auto";
     if (shouldUseQwen) {
         try {
-            return await requestQwenTags(
+            const tags = await requestQwenTags(
                 {
                     text,
                     project_id: options.projectId,
@@ -432,16 +499,21 @@ export async function suggestCortexaTags(
                 },
                 config
             );
+            recordLlmSuccess();
+            return tags;
         } catch (error) {
+            recordLlmError(error);
             if (config.mode === "qwen-http" || config.strictRemote) {
                 throw error;
             }
         }
     }
 
-    return suggestMiniLlmTags(text, {
+    const tags = suggestMiniLlmTags(text, {
         maxTags
     });
+    recordLlmSuccess();
+    return tags;
 }
 
 const unifiedClient: LLMClient = {
@@ -454,26 +526,67 @@ const unifiedClient: LLMClient = {
         const config = readConfig();
 
         if (config.mode === "disabled") {
-            throw new Error("cortexa-llm-disabled");
+            const error = new Error("cortexa-llm-disabled");
+            recordLlmError(error);
+            throw error;
         }
 
         if (config.mode === "qwen-http") {
-            return requestQwenJson<T>(params, config);
+            try {
+                const result = await requestQwenJson<T>(params, config);
+                recordLlmSuccess();
+                return result;
+            } catch (error) {
+                recordLlmError(error);
+                throw error;
+            }
         }
 
         if (config.mode === "auto") {
             try {
-                return await requestQwenJson<T>(params, config);
+                const result = await requestQwenJson<T>(params, config);
+                recordLlmSuccess();
+                return result;
             } catch (error) {
+                recordLlmError(error);
                 if (config.strictRemote) {
                     throw error;
                 }
             }
         }
 
-        return miniClient.completeJson<T>(params);
+        try {
+            const result = await miniClient.completeJson<T>(params);
+            recordLlmSuccess();
+            return result;
+        } catch (error) {
+            recordLlmError(error);
+            throw error;
+        }
     }
 };
+
+export async function getCortexaLlmRuntimeStatus(): Promise<CortexaLlmRuntimeStatus> {
+    const config = readConfig();
+    const miniStatus = getMiniLlmStatus();
+    const shouldCheckService = config.mode === "qwen-http" || config.mode === "auto";
+    const serviceReachable = shouldCheckService
+        ? await isQwenServiceReachable(config.qwenServiceUrl, Math.min(1500, config.timeoutMs))
+        : false;
+
+    return {
+        mode: config.mode,
+        strictRemote: config.strictRemote,
+        effectiveTimeoutMs: config.timeoutMs,
+        effectiveJsonMaxTokens: config.maxJsonTokens,
+        serviceUrl: config.qwenServiceUrl,
+        serviceReachable,
+        modelPathDetected: miniStatus.modelPath,
+        lastSuccessAt: lastSuccessAt ?? undefined,
+        lastError: lastError ?? undefined,
+        diagnosticHints: buildDiagnosticHints(config, miniStatus, serviceReachable)
+    };
+}
 
 export function getCortexaLlmClient(): LLMClient {
     return unifiedClient;

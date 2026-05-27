@@ -5,6 +5,7 @@ import {
     runCortexaAgent
 } from "../../../../core/agents/orchestrator.service";
 import { toBoolean, toBoundedInt, toBoundedNumber, toRecord, toStringArray, toTrimmedString } from "../../../../core/daemon/http";
+import { getCortexaLlmRuntimeStatus } from "../../../../core/llm/cortexa-llm.service";
 import {
     auditMemoryResurrection,
     backfillMemoryCompaction,
@@ -430,6 +431,22 @@ cxlinkRouter.post("/session-resurrection/trigger", async (req: any, res: any) =>
             report,
             status: getSessionResurrectionStatus(),
             streamEvent
+        });
+    } catch (error) {
+        res.status(500).json({
+            ok: false,
+            error: error instanceof Error ? error.message : String(error)
+        });
+    }
+});
+
+cxlinkRouter.post("/llm/status", async (_req: any, res: any) => {
+    try {
+        const status = await getCortexaLlmRuntimeStatus();
+        res.json({
+            ok: true,
+            route: "cxlink/llm/status",
+            status
         });
     } catch (error) {
         res.status(500).json({

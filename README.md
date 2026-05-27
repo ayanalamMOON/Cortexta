@@ -256,11 +256,14 @@ Options:
 - `--max-files=<n>`
 - `--max-chat-files=<n>`
 - `--chat-root=<path>`
+- `--policy=<path>` (override `cortexa.policy.json` location)
+- `--policy-check` (validate policy file and exit)
 
 Notes:
 - `path` is optional; if omitted, current working directory is used.
 - chat ingestion discovers transcripts from matching VS Code `workspaceStorage` first (when resolvable), then falls back to broader roots.
 - common heavyweight directories (`.venv`, `venv`, `.cache`, `target`, etc.) are skipped during code walk.
+- if `cortexa.policy.json` exists at the project root, ingestion applies its include/exclude, language, chat, and redaction rules automatically.
 
 Examples:
 
@@ -286,6 +289,7 @@ Train and inspect the quantized local mini LLM used by progression/evolution age
 
 ```bash
 pnpm run cortexa -- llm status
+pnpm run cortexa -- llm status --runtime
 pnpm run cortexa -- llm train . --project-id=my-service --max-vocab=4096 --max-transitions=24
 pnpm run cortexa -- llm train . --hf-dataset=HuggingFaceH4/ultrachat_200k --hf-rows=120
 pnpm run cortexa -- llm preview "summarize progression telemetry stages" --max-tokens=96
@@ -482,6 +486,7 @@ Base default:
 - `POST /cxlink/context`
 - `POST /cxlink/query`
 - `POST /cxlink/plan`
+- `POST /cxlink/llm/status`
 - `POST /cxlink/agent/list`
 - `POST /cxlink/agent/run`
 - `POST /cxlink/branch/list`
@@ -588,6 +593,7 @@ The daemon health payload now includes summarized self-healing and session-resur
 ### Daemon
 
 - `CORTEXA_DAEMON_PORT` (default `4312`)
+- `CORTEXA_DAEMON_URL` (optional override, default `http://localhost:4312`)
 - `CORTEXA_WS_PORT` (default `4321`)
 - `CORTEXA_DAEMON_TOKEN`
 - `CORTEXA_DAEMON_BODY_LIMIT` (default `6mb`)

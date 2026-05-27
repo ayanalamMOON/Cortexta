@@ -14,6 +14,7 @@ ingestRouter.post("/", async (req: any, res: any) => {
     const maxFiles = toBoundedInt(body.maxFiles, 0, 200_000);
     const maxChatFiles = toBoundedInt(body.maxChatFiles, 1, 50_000);
     const chatRoot = toTrimmedString(body.chatRoot, 4096);
+    const policyPath = toTrimmedString(body.policyPath, 4096);
 
     if (!projectPath) {
         res.status(400).json({ ok: false, error: "Missing required field: path" });
@@ -29,7 +30,8 @@ ingestRouter.post("/", async (req: any, res: any) => {
             skipUnchanged,
             maxFiles,
             maxChatFiles,
-            chatSearchRoots: chatRoot ? [chatRoot] : undefined
+            chatSearchRoots: chatRoot ? [chatRoot] : undefined,
+            policyPath: policyPath ?? undefined
         });
 
         res.json({ ok: true, route: "ingest", result });

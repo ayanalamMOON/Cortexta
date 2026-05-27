@@ -7,6 +7,7 @@ import { suggestCortexaTags } from "../llm/cortexa-llm.service";
 import { deleteMemoriesByIds, upsertMemory } from "../mempalace/memory.service";
 import { parseCode } from "./code.parser";
 import { parseCopilotSession } from "./copilot.parser";
+import { buildIngestPolicyRuntime, resolveIngestPolicy, type IngestPolicy } from "./ingest.policy";
 
 export interface IngestInput {
     projectPath: string;
@@ -18,6 +19,8 @@ export interface IngestInput {
     maxChatFiles?: number;
     chatSearchRoots?: string[];
     skipUnchanged?: boolean;
+    policyPath?: string;
+    policy?: IngestPolicy;
 }
 
 export interface IngestionResult {
@@ -359,13 +362,24 @@ function toSourceRef(projectPath: string, targetPath: string): string {
     return normalizeSlashes(absoluteTarget);
 }
 
-function shouldIncludeCodeFile(filePath: string): boolean {
+function shouldIncludeCodeFile(filePath: string, allowedExtensions?: Set<string>): boolean {
     const ext = path.extname(filePath).toLowerCase();
-    return CODE_EXTENSIONS.has(ext);
+    const allowed = allowedExtensions ?? CODE_EXTENSIONS;
+    return allowed.has(ext);
 }
 
-function walkFiles(rootPath: string, maxFiles = Number.POSITIVE_INFINITY): string[] {
+function walkFiles(
+    rootPath: string,
+    options: {
+        maxFiles?: number;
+        allowedExtensions?: Set<string>;
+        shouldIncludePath?: (filePath: string) => boolean;
+    } = {}
+): string[] {
     const found: string[] = [];
+    const maxFiles = options.maxFiles ?? Number.POSITIVE_INFINITY;
+    const shouldIncludePath = options.shouldIncludePath ?? (() => true);
+    const allowedExtensions = options.allowedExtensions;
 
     const stack: string[] = [rootPath];
 
@@ -401,7 +415,7 @@ function walkFiles(rootPath: string, maxFiles = Number.POSITIVE_INFINITY): strin
                 continue;
             }
 
-            if (entry.isFile() && shouldIncludeCodeFile(full)) {
+            if (entry.isFile() && shouldIncludeCodeFile(full, allowedExtensions) && shouldIncludePath(full)) {
                 found.push(full);
             }
         }
@@ -693,18 +707,44 @@ export async function runIngestion(input: IngestInput): Promise<IngestionResult>
         throw new Error(`Project path does not exist or is not a directory: ${projectPath}`);
     }
 
+    const policyResolution = resolveIngestPolicy({
+        projectPath,
+        policyPath: input.policyPath,
+        policyOverride: input.policy
+    });
+    if (policyResolution.errors.length > 0) {
+        throw new Error(`Invalid ingestion policy: ${policyResolution.errors.join("; ")}`);
+    }
+    const policyRuntime = buildIngestPolicyRuntime({
+        projectPath,
+        resolution: policyResolution
+    });
+
     const projectId = input.projectId ?? (path.basename(projectPath) || "default");
     const branch = normalizeBranchName(input.branch);
     const maxChunkChars = toPositiveInteger(input.maxChunkChars) ?? DEFAULT_MAX_CHUNK_CHARS;
     const maxFiles = toNonNegativeInteger(input.maxFiles) ?? Number.POSITIVE_INFINITY;
-    const maxFileBytes = toPositiveInteger(readEnv("CORTEXA_INGEST_MAX_FILE_BYTES")) ?? DEFAULT_MAX_FILE_BYTES;
-    const maxChatFiles = toPositiveInteger(input.maxChatFiles) ?? DEFAULT_MAX_CHAT_FILES;
+    const maxFileBytes =
+        toPositiveInteger(policyRuntime.maxFileBytes) ??
+        toPositiveInteger(readEnv("CORTEXA_INGEST_MAX_FILE_BYTES")) ??
+        DEFAULT_MAX_FILE_BYTES;
+    const maxChatFiles =
+        toPositiveInteger(policyRuntime.maxChatFiles) ??
+        toPositiveInteger(input.maxChatFiles) ??
+        DEFAULT_MAX_CHAT_FILES;
     const skipUnchanged = input.skipUnchanged !== false ? DEFAULT_SKIP_UNCHANGED : false;
+    const includeChats =
+        typeof policyRuntime.chatEnabled === "boolean" ? policyRuntime.chatEnabled : Boolean(input.includeChats);
+    const chatSearchRoots =
+        policyRuntime.chatRoots && policyRuntime.chatRoots.length > 0
+            ? policyRuntime.chatRoots
+            : (input.chatSearchRoots ?? []);
     const autoTaggingEnabled = parseBooleanEnv(
         readEnv("CORTEXA_LLM_AUTO_TAGGING"),
         DEFAULT_AUTO_TAGGING_ENABLED
     );
     const autoTagMaxTags = toPositiveInteger(readEnv("CORTEXA_LLM_AUTO_TAG_MAX_TAGS")) ?? DEFAULT_AUTO_TAG_MAX_TAGS;
+    const redact = policyRuntime.redact;
 
     const result: IngestionResult = {
         filesScanned: 0,
@@ -722,7 +762,11 @@ export async function runIngestion(input: IngestInput): Promise<IngestionResult>
         errors: []
     };
 
-    const files = walkFiles(projectPath, maxFiles);
+    const files = walkFiles(projectPath, {
+        maxFiles,
+        allowedExtensions: policyRuntime.allowedExtensions,
+        shouldIncludePath: policyRuntime.shouldIncludePath
+    });
 
     for (const filePath of files) {
         result.filesScanned += 1;
@@ -785,12 +829,16 @@ export async function runIngestion(input: IngestInput): Promise<IngestionResult>
                         segment
                     ]);
 
+                    const { text: safeTitle } = redact(segmentedTitle);
+                    const { text: safeSummary } = redact(segmentedSummary);
+                    const { text: safeSegment } = redact(segment);
+
                     result.codeChunks += 1;
 
                     const baseTags = [...new Set([...chunk.tags, parsed.language, `file:${sourceRef}`])];
                     const autoTags = await suggestAutoTags(
                         autoTaggingEnabled,
-                        `${segmentedTitle}\n${segmentedSummary}\n${segment}`,
+                        `${safeTitle}\n${safeSummary}\n${safeSegment}`,
                         autoTagMaxTags,
                         projectId
                     );
@@ -801,9 +849,9 @@ export async function runIngestion(input: IngestInput): Promise<IngestionResult>
                         branch,
                         kind: "code_entity",
                         sourceType: "code",
-                        title: segmentedTitle,
-                        summary: segmentedSummary,
-                        content: segment,
+                        title: safeTitle,
+                        summary: safeSummary,
+                        content: safeSegment,
                         tags: mergeTags(baseTags, autoTags),
                         importance: parsed.facts.functions.length > 0 ? 0.72 : 0.58,
                         confidence: 0.7,
@@ -836,8 +884,8 @@ export async function runIngestion(input: IngestInput): Promise<IngestionResult>
         }
     }
 
-    if (input.includeChats) {
-        const chatFiles = discoverChatSessionFiles(projectPath, input.chatSearchRoots ?? [], maxChatFiles);
+    if (includeChats) {
+        const chatFiles = discoverChatSessionFiles(projectPath, chatSearchRoots, maxChatFiles);
         for (const chatFile of chatFiles) {
             result.chatFilesScanned += 1;
 
@@ -874,12 +922,14 @@ export async function runIngestion(input: IngestInput): Promise<IngestionResult>
                     const turn = turns[turnIndex];
                     const prompt = turn.prompt.trim();
                     const response = turn.response.trim();
+                    const { text: safePrompt } = redact(prompt);
+                    const { text: safeResponse } = redact(response);
 
-                    if (!prompt && !response) {
+                    if (!safePrompt && !safeResponse) {
                         continue;
                     }
 
-                    const summarySource = prompt || response;
+                    const summarySource = safePrompt || safeResponse;
                     const summary =
                         summarySource.length <= 240 ? summarySource : `${summarySource.slice(0, 239)}…`;
 
@@ -889,7 +939,7 @@ export async function runIngestion(input: IngestInput): Promise<IngestionResult>
                     const baseTags = [...new Set(["copilot", "chat", `chat-file:${sourceRef}`, ...fileTags])];
                     const autoTags = await suggestAutoTags(
                         autoTaggingEnabled,
-                        `${summary}\n${prompt}\n${response}`,
+                        `${summary}\n${safePrompt}\n${safeResponse}`,
                         autoTagMaxTags,
                         projectId
                     );
@@ -903,7 +953,7 @@ export async function runIngestion(input: IngestInput): Promise<IngestionResult>
                         sourceType: "chat",
                         title: "Copilot Interaction",
                         summary,
-                        content: `${prompt}\n\n---\n\n${response}`.trim(),
+                        content: `${safePrompt}\n\n---\n\n${safeResponse}`.trim(),
                         tags: mergeTags(baseTags, autoTags),
                         importance: 0.65,
                         confidence: 0.75,

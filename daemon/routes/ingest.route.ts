@@ -11,7 +11,8 @@ ingestRouter.post("/", async (req: any, res: any) => {
         skipUnchanged,
         maxFiles,
         maxChatFiles,
-        chatRoot
+        chatRoot,
+        policyPath
     } = (req.body ?? {}) as {
         path?: string;
         projectId?: string;
@@ -20,6 +21,7 @@ ingestRouter.post("/", async (req: any, res: any) => {
         maxFiles?: number;
         maxChatFiles?: number;
         chatRoot?: string;
+        policyPath?: string;
     };
 
     if (!projectPath) {
@@ -35,7 +37,8 @@ ingestRouter.post("/", async (req: any, res: any) => {
             skipUnchanged: skipUnchanged !== false,
             maxFiles,
             maxChatFiles,
-            chatSearchRoots: chatRoot ? [String(chatRoot)] : undefined
+            chatSearchRoots: chatRoot ? [String(chatRoot)] : undefined,
+            policyPath: policyPath ? String(policyPath) : undefined
         });
 
         res.json({ ok: true, result });

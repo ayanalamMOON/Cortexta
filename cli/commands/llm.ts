@@ -1,3 +1,4 @@
+import type { CortexaLlmRuntimeStatus } from "../../core/llm/cortexa-llm.service";
 import {
     generateMiniLlmText,
     getMiniLlmStatus,
@@ -15,16 +16,149 @@ import { logger } from "../utils/logger";
 
 function printUsage(): void {
     logger.warn(
-        "Usage: cortexa llm status [--json] | cortexa llm train [projectPath] [--project-id=<id>] [--branch=<name>] [--max-files=<n>] [--max-file-bytes=<n>] [--max-corpus-chars=<n>] [--max-vocab=<n>] [--max-transitions=<n>] [--memory-limit=<n>] [--no-memory] [--hf-dataset=<id>] [--hf-split=<name>] [--hf-rows=<n>] [--model-path=<path>] [--json] | cortexa llm preview <text> [--max-tokens=<n>]"
+        "Usage: cortexa llm status [--runtime] [--include-mini] [--daemon-url=<url>] [--daemon-token=<token>] [--request-timeout-ms=<n>] [--json] | cortexa llm train [projectPath] [--project-id=<id>] [--branch=<name>] [--max-files=<n>] [--max-file-bytes=<n>] [--max-corpus-chars=<n>] [--max-vocab=<n>] [--max-transitions=<n>] [--memory-limit=<n>] [--no-memory] [--hf-dataset=<id>] [--hf-split=<name>] [--hf-rows=<n>] [--model-path=<path>] [--json] | cortexa llm preview <text> [--max-tokens=<n>]"
     );
+}
+
+function resolveDaemonBaseUrl(parsed: ReturnType<typeof parseCliArgs>): string {
+    const explicit = readStringOption(parsed, ["daemon-url", "daemonUrl"]);
+    if (explicit) {
+        return explicit.endsWith("/") ? explicit.slice(0, -1) : explicit;
+    }
+
+    const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env;
+    const envUrl = env?.CORTEXA_DAEMON_URL?.trim();
+    if (envUrl) {
+        return envUrl.endsWith("/") ? envUrl.slice(0, -1) : envUrl;
+    }
+
+    const portCandidate = Number(env?.CORTEXA_DAEMON_PORT ?? 4312);
+    const port = Number.isFinite(portCandidate) ? portCandidate : 4312;
+    return `http://localhost:${port}`;
+}
+
+function resolveDaemonToken(parsed: ReturnType<typeof parseCliArgs>): string | undefined {
+    return (
+        readStringOption(parsed, ["token", "daemon-token", "daemonToken"]) ??
+        (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.CORTEXA_DAEMON_TOKEN
+    );
+}
+
+async function fetchRuntimeStatus(parsed: ReturnType<typeof parseCliArgs>): Promise<CortexaLlmRuntimeStatus | null> {
+    const baseUrl = resolveDaemonBaseUrl(parsed);
+    const token = resolveDaemonToken(parsed);
+    const timeoutMs = clampInteger(readNumberOption(parsed, ["request-timeout-ms", "requestTimeoutMs"]), 4000, 500, 60_000);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+        const headers: Record<string, string> = {
+            "content-type": "application/json"
+        };
+
+        if (token) {
+            headers["x-cortexa-token"] = token;
+        }
+
+        const response = await fetch(`${baseUrl}/cxlink/llm/status`, {
+            method: "POST",
+            headers,
+            body: "{}",
+            signal: controller.signal
+        });
+
+        const payload = (await response.json().catch(() => ({}))) as {
+            ok?: boolean;
+            error?: string;
+            status?: CortexaLlmRuntimeStatus;
+        };
+
+        if (!response.ok) {
+            logger.warn(
+                `LLM runtime status request failed (${response.status}): ${payload.error ?? "unknown_error"}`
+            );
+            return null;
+        }
+
+        if (!payload.status) {
+            logger.warn("LLM runtime status response missing status payload.");
+            return null;
+        }
+
+        return payload.status;
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.warn(`Failed to reach daemon LLM status endpoint: ${message}`);
+        return null;
+    } finally {
+        clearTimeout(timeout);
+    }
 }
 
 export async function llmCommand(cliArgs: string[] = []): Promise<void> {
     const parsed = parseCliArgs(cliArgs);
     const action = (parsed.positionals[0] ?? "status").toLowerCase();
     const jsonMode = hasFlag(parsed, ["json"]) || readStringOption(parsed, ["format"]) === "json";
+    const runtimeMode = readBooleanOption(parsed, ["runtime"], false);
+    const includeMini = readBooleanOption(parsed, ["include-mini", "includeMini"], false);
 
     if (action === "status") {
+        if (runtimeMode) {
+            const status = await fetchRuntimeStatus(parsed);
+            if (!status) {
+                return;
+            }
+
+            if (jsonMode) {
+                if (includeMini) {
+                    logger.info(JSON.stringify({ runtime: status, mini: getMiniLlmStatus() }, null, 2));
+                } else {
+                    logger.info(JSON.stringify(status, null, 2));
+                }
+                return;
+            }
+
+            logger.info("LLM runtime status:");
+            logger.info(`Mode: ${status.mode}`);
+            logger.info(`Strict remote: ${status.strictRemote}`);
+            logger.info(`Service URL: ${status.serviceUrl}`);
+            logger.info(`Service reachable: ${status.serviceReachable}`);
+            logger.info(`Effective timeout: ${status.effectiveTimeoutMs}ms`);
+            logger.info(`Effective JSON max tokens: ${status.effectiveJsonMaxTokens}`);
+
+            if (status.modelPathDetected) {
+                logger.info(`Model path detected: ${status.modelPathDetected}`);
+            }
+
+            if (typeof status.lastSuccessAt === "number") {
+                logger.info(`Last success: ${new Date(status.lastSuccessAt).toISOString()}`);
+            }
+
+            if (status.lastError) {
+                logger.warn(`Last error: ${status.lastError}`);
+            }
+
+            if (Array.isArray(status.diagnosticHints) && status.diagnosticHints.length > 0) {
+                logger.info("Diagnostic hints:");
+                for (const hint of status.diagnosticHints) {
+                    logger.info(`- ${hint}`);
+                }
+            }
+
+            if (includeMini) {
+                const miniStatus = getMiniLlmStatus();
+                logger.info("Mini LLM status:");
+                logger.info(`Mini LLM mode: ${miniStatus.mode}`);
+                logger.info(`Enabled: ${miniStatus.enabled}`);
+                logger.info(`Model path: ${miniStatus.modelPath}`);
+                logger.info(`Model file present: ${miniStatus.modelExists}`);
+                logger.info(`Persisted model loaded: ${miniStatus.loaded}`);
+                logger.info(`Ephemeral model loaded: ${miniStatus.ephemeralLoaded}`);
+            }
+
+            return;
+        }
+
         const status = getMiniLlmStatus();
 
         if (jsonMode) {

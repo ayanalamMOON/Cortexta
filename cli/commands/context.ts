@@ -119,7 +119,7 @@ async function runContextStreamListen(parsed: ReturnType<typeof parseCliArgs>): 
             settle();
         };
 
-        subscription.socket.once("close", closeWatcher);
+        subscription.socket.addEventListener("close", closeWatcher);
     });
 }
 

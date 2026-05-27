@@ -2,6 +2,7 @@ import { Command } from "commander";
 import fs from "node:fs";
 import path from "node:path";
 import { runIngestion } from "../../../../core/ingestion/ingest.pipeline";
+import { buildIngestPolicyRuntime, resolveIngestPolicy } from "../../../../core/ingestion/ingest.policy";
 import { logger } from "../utils/logger";
 
 function readEnv(name: string): string | undefined {
@@ -38,12 +39,60 @@ export const ingestCommand = new Command("ingest")
     .option("--max-files <maxFiles>", "Maximum files to process", parseMaxFiles)
     .option("--max-chat-files <maxChatFiles>", "Maximum number of chat session files to parse", parseMaxChatFiles)
     .option("--chat-root <chatRoot>", "Optional workspaceStorage root for chat ingestion discovery")
-    .action(async (dir: string | undefined, options: { projectId?: string; includeChats?: boolean; maxFiles?: number; maxChatFiles?: number; chatRoot?: string }) => {
+    .option("--policy <policyPath>", "Path to cortexa.policy.json override")
+    .option("--policy-check", "Validate policy file and exit", false)
+    .action(async (
+        dir: string | undefined,
+        options: {
+            projectId?: string;
+            includeChats?: boolean;
+            maxFiles?: number;
+            maxChatFiles?: number;
+            chatRoot?: string;
+            policy?: string;
+            policyCheck?: boolean;
+        }
+    ) => {
         const inputDir = typeof dir === "string" && dir.trim().length > 0 ? dir : ".";
         const projectPath = resolveProjectPath(inputDir);
         const stats = await fs.promises.stat(projectPath).catch(() => null);
         if (!stats?.isDirectory()) {
             throw new Error(`Ingest path is not a directory: ${projectPath}`);
+        }
+
+        const policyResolution = resolveIngestPolicy({
+            projectPath,
+            policyPath: options.policy
+        });
+
+        if (policyResolution.errors.length > 0) {
+            logger.error("Ingestion policy validation failed:");
+            for (const error of policyResolution.errors) {
+                logger.error(`- ${error}`);
+            }
+            return;
+        }
+
+        if (options.policyCheck) {
+            const runtime = buildIngestPolicyRuntime({ projectPath, resolution: policyResolution });
+            logger.info("Ingestion policy check passed.");
+            logger.info(`Policy file: ${runtime.policyPath ?? "none"}`);
+
+            if (runtime.warnings.length > 0) {
+                logger.warn("Policy warnings:");
+                for (const warning of runtime.warnings) {
+                    logger.warn(`- ${warning}`);
+                }
+            }
+
+            return;
+        }
+
+        if (policyResolution.warnings.length > 0) {
+            logger.warn("Ingestion policy warnings:");
+            for (const warning of policyResolution.warnings) {
+                logger.warn(`- ${warning}`);
+            }
         }
 
         const result = await runIngestion({
@@ -52,7 +101,9 @@ export const ingestCommand = new Command("ingest")
             includeChats: Boolean(options.includeChats),
             maxFiles: Number.isFinite(options.maxFiles) ? options.maxFiles : undefined,
             maxChatFiles: Number.isFinite(options.maxChatFiles) ? options.maxChatFiles : undefined,
-            chatSearchRoots: options.chatRoot ? [options.chatRoot] : undefined
+            chatSearchRoots: options.chatRoot ? [options.chatRoot] : undefined,
+            policyPath: policyResolution.policyPath,
+            policy: policyResolution.policy
         });
 
         logger.info("Ingestion completed", {

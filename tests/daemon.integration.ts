@@ -515,6 +515,58 @@ async function runContract(name: string, factory: DaemonFactory): Promise<void> 
             assert.ok(Array.isArray(cxlinkPlanBody.steps), `[${name}] /cxlink/plan steps array`);
             assert.ok((cxlinkPlanBody.steps?.length ?? 0) >= 4, `[${name}] /cxlink/plan minimum steps`);
 
+            const llmStatusResponse = await postJson(baseUrl, "/cxlink/llm/status", {}, TOKEN);
+            await expectStatus(llmStatusResponse, 200, `[${name}] /cxlink/llm/status success`);
+            const llmStatusBody = (await llmStatusResponse.json()) as {
+                ok?: boolean;
+                route?: string;
+                status?: {
+                    mode?: string;
+                    strictRemote?: boolean;
+                    effectiveTimeoutMs?: number;
+                    effectiveJsonMaxTokens?: number;
+                    serviceUrl?: string;
+                    serviceReachable?: boolean;
+                    modelPathDetected?: string;
+                    lastSuccessAt?: number;
+                    lastError?: string;
+                    diagnosticHints?: unknown[];
+                };
+            };
+            assert.equal(llmStatusBody.ok, true, `[${name}] /cxlink/llm/status ok`);
+            assert.equal(llmStatusBody.route, "cxlink/llm/status", `[${name}] /cxlink/llm/status route`);
+            assert.equal(typeof llmStatusBody.status?.mode, "string", `[${name}] /cxlink/llm/status mode`);
+            assert.equal(
+                typeof llmStatusBody.status?.strictRemote,
+                "boolean",
+                `[${name}] /cxlink/llm/status strictRemote`
+            );
+            assert.equal(
+                typeof llmStatusBody.status?.effectiveTimeoutMs,
+                "number",
+                `[${name}] /cxlink/llm/status effectiveTimeoutMs`
+            );
+            assert.equal(
+                typeof llmStatusBody.status?.effectiveJsonMaxTokens,
+                "number",
+                `[${name}] /cxlink/llm/status effectiveJsonMaxTokens`
+            );
+            assert.equal(typeof llmStatusBody.status?.serviceUrl, "string", `[${name}] /cxlink/llm/status serviceUrl`);
+            assert.equal(
+                typeof llmStatusBody.status?.serviceReachable,
+                "boolean",
+                `[${name}] /cxlink/llm/status serviceReachable`
+            );
+            assert.equal(
+                typeof llmStatusBody.status?.modelPathDetected,
+                "string",
+                `[${name}] /cxlink/llm/status modelPathDetected`
+            );
+            assert.ok(
+                Array.isArray(llmStatusBody.status?.diagnosticHints),
+                `[${name}] /cxlink/llm/status diagnosticHints`
+            );
+
             const agentListResponse = await postJson(baseUrl, "/cxlink/agent/list", {}, TOKEN);
             await expectStatus(agentListResponse, 200, `[${name}] /cxlink/agent/list success`);
             const agentListBody = (await agentListResponse.json()) as {

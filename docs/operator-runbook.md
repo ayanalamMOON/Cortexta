@@ -98,6 +98,9 @@ pnpm run cortexa -- init
 pnpm run cortexa -- ingest .
 ```
 
+> If `cortexa.policy.json` exists in the project root, ingestion will apply it automatically.
+> Use `pnpm run cortexa -- ingest . --policy-check` to validate the policy before running.
+
 Useful variants:
 
 ```bash
@@ -126,6 +129,14 @@ pnpm run cortexa -- llm status
 pnpm run cortexa -- llm train . --project-id=cortexta --max-vocab=4096 --max-transitions=24
 pnpm run cortexa -- llm preview "summarize memory progression and merge decisions"
 ```
+
+### 5c) Check runtime LLM diagnostics (daemon)
+
+```bash
+pnpm run cortexa -- llm status --runtime
+```
+
+> If daemon auth is enabled, set `CORTEXA_DAEMON_TOKEN` or pass `--daemon-token=<token>`.
 
 ### 6) Start daemon for API/MCP clients
 

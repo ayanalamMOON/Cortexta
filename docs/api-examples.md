@@ -29,13 +29,13 @@ flowchart TD
   X --> S
 ```
 
-| Group                | Representative routes                                                 | Typical use                                        |
-| -------------------- | --------------------------------------------------------------------- | -------------------------------------------------- |
-| Health               | `GET /health`, `GET /metrics`                                         | uptime checks and telemetry scraping               |
-| Core                 | `/ingest`, `/query`, `/context`, `/evolve`                            | ingestion, retrieval, context compile, progression |
-| CX-LINK              | `/cxlink/context`, `/cxlink/query`, `/cxlink/plan`, `/cxlink/agent/*` | protocol envelopes and orchestration               |
-| Compaction           | `/cxlink/compaction/*`                                                | stats, audit, dashboard, self-healing control      |
-| Session resurrection | `/cxlink/session-resurrection/*`                                      | scheduler status and manual trigger                |
+| Group                | Representative routes                                                                       | Typical use                                        |
+| -------------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| Health               | `GET /health`, `GET /metrics`                                                               | uptime checks and telemetry scraping               |
+| Core                 | `/ingest`, `/query`, `/context`, `/evolve`                                                  | ingestion, retrieval, context compile, progression |
+| CX-LINK              | `/cxlink/context`, `/cxlink/query`, `/cxlink/plan`, `/cxlink/llm/status`, `/cxlink/agent/*` | protocol envelopes and orchestration               |
+| Compaction           | `/cxlink/compaction/*`                                                                      | stats, audit, dashboard, self-healing control      |
+| Session resurrection | `/cxlink/session-resurrection/*`                                                            | scheduler status and manual trigger                |
 
 ---
 
@@ -122,6 +122,8 @@ Notes:
 - `includeChats` defaults to `false` for API calls unless provided.
 - `skipUnchanged` defaults to `true` for API calls.
 - if `includeChats=true` and `chatRoot` is omitted, transcript discovery scopes to matching workspace storage first, then falls back to broader roots.
+- if `cortexa.policy.json` exists in the project root, ingestion applies it automatically.
+- set `policyPath` to override the default policy file location.
 
 **Request**
 ```json
@@ -131,7 +133,8 @@ Notes:
   "includeChats": true,
   "skipUnchanged": true,
   "maxFiles": 3000,
-  "maxChatFiles": 500
+  "maxChatFiles": 500,
+  "policyPath": "C:/Users/ayana/Projects/Cortexta/cortexa.policy.json"
 }
 ```
 
@@ -635,6 +638,36 @@ Notes:
   ],
   "cxf": "intent: introduce retention alerting for compaction anomalies\nscope: project + memory + retrieval",
   "envelope": "# Context\n- ...\n\n[CONTEXT_STATS]\ntokens=702 atoms=8 dropped=2\n\n[USER_QUERY]\nintroduce retention alerting for compaction anomalies"
+}
+```
+
+### POST `/cxlink/llm/status`
+
+**Request**
+```json
+{}
+```
+
+**Response**
+```json
+{
+  "ok": true,
+  "route": "cxlink/llm/status",
+  "status": {
+    "mode": "auto",
+    "strictRemote": true,
+    "effectiveTimeoutMs": 60000,
+    "effectiveJsonMaxTokens": 160,
+    "serviceUrl": "http://127.0.0.1:8000",
+    "serviceReachable": false,
+    "modelPathDetected": "data/llm/cortexa-mini-llm.q8.json",
+    "lastSuccessAt": 1713433000000,
+    "lastError": "Qwen service request failed (503): {\"error\":\"service_unavailable\"}",
+    "diagnosticHints": [
+      "Qwen service is not reachable at http://127.0.0.1:8000.",
+      "Strict remote is enabled; auto mode will not fall back to mini-local on Qwen failure."
+    ]
+  }
 }
 ```
 

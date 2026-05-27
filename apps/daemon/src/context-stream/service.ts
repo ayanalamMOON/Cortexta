@@ -550,7 +550,7 @@ class ContextStreamController implements ContextStreamControllerApi {
                 scope: suggestion.recommendedScope
             });
 
-            if (!compiled.context.trim() || compiled.memoriesUsed === 0) {
+            if (!compiled.context.trim()) {
                 this.emitSuppressed(runtime, {
                     sourcePath,
                     sourceScope,

@@ -1,5 +1,6 @@
 import path from "node:path";
 import { runIngestion } from "../../core/ingestion/ingest.pipeline";
+import { buildIngestPolicyRuntime, resolveIngestPolicy } from "../../core/ingestion/ingest.policy";
 import {
     clampInteger,
     hasFlag,
@@ -45,6 +46,9 @@ export async function ingestCommand(projectPath: string, cliArgs: string[] = [])
     const projectId = normalizeProjectIdOption(readStringOption(parsed, ["project-id", "projectId"]));
     const branch = readStringOption(parsed, ["branch"]);
     const chatRoot = readStringOption(parsed, ["chat-root", "chatRoot"]);
+    const policyPath = readStringOption(parsed, ["policy", "policyPath"]);
+    const policyCheck = hasFlag(parsed, ["policy-check", "policyCheck"]);
+    const jsonMode = hasFlag(parsed, ["json"]) || readStringOption(parsed, ["format"]) === "json";
     const maxFiles = normalizeOptionalInt(readNumberOption(parsed, ["max-files", "maxFiles"]), 0, 200_000);
     const maxChatFiles = normalizeOptionalInt(
         readNumberOption(parsed, ["max-chat-files", "maxChatFiles"]),
@@ -59,11 +63,86 @@ export async function ingestCommand(projectPath: string, cliArgs: string[] = [])
         ? false
         : true;
 
+    const policyResolution = resolveIngestPolicy({
+        projectPath,
+        policyPath
+    });
+
+    if (policyResolution.errors.length > 0) {
+        const payload = {
+            ok: false,
+            policyPath: policyResolution.policyPath,
+            errors: policyResolution.errors,
+            warnings: policyResolution.warnings
+        };
+
+        if (jsonMode) {
+            logger.info(JSON.stringify(payload, null, 2));
+        } else {
+            logger.error("Ingestion policy validation failed:");
+            for (const error of policyResolution.errors) {
+                logger.error(`- ${error}`);
+            }
+        }
+
+        return;
+    }
+
+    if (policyCheck) {
+        const runtime = buildIngestPolicyRuntime({ projectPath, resolution: policyResolution });
+        const payload = {
+            ok: true,
+            policyPath: runtime.policyPath,
+            warnings: runtime.warnings,
+            policy: runtime.policy ?? null,
+            effective: {
+                maxFileBytes: runtime.maxFileBytes,
+                allowedExtensions: runtime.allowedExtensions ? [...runtime.allowedExtensions] : undefined,
+                includeGlobs: runtime.policy?.includeGlobs ?? [],
+                excludeGlobs: runtime.policy?.excludeGlobs ?? [],
+                chat: {
+                    enabled: runtime.chatEnabled,
+                    roots: runtime.chatRoots,
+                    maxFiles: runtime.maxChatFiles
+                },
+                redaction: runtime.policy?.redaction ?? null
+            }
+        };
+
+        if (jsonMode) {
+            logger.info(JSON.stringify(payload, null, 2));
+        } else {
+            logger.info("Ingestion policy check passed.");
+            if (runtime.policyPath) {
+                logger.info(`Policy file: ${runtime.policyPath}`);
+            } else {
+                logger.info("Policy file: none");
+            }
+
+            if (runtime.warnings.length > 0) {
+                logger.warn("Policy warnings:");
+                for (const warning of runtime.warnings) {
+                    logger.warn(`- ${warning}`);
+                }
+            }
+        }
+
+        return;
+    }
+
+    if (policyResolution.warnings.length > 0) {
+        logger.warn("Ingestion policy warnings:");
+        for (const warning of policyResolution.warnings) {
+            logger.warn(`- ${warning}`);
+        }
+    }
+
     const inferredProjectId = projectId ?? inferProjectIdFromPath(projectPath);
     const startedAt = Date.now();
 
     logger.info("Ingestion started", {
         projectPath,
+        policyPath: policyResolution.policyPath ?? "none",
         projectId: inferredProjectId,
         projectIdSource: projectId ? "explicit" : "auto",
         branch: branch ?? "main",
@@ -82,7 +161,9 @@ export async function ingestCommand(projectPath: string, cliArgs: string[] = [])
         skipUnchanged,
         maxFiles,
         maxChatFiles,
-        chatSearchRoots: chatRoot ? [chatRoot] : undefined
+        chatSearchRoots: chatRoot ? [chatRoot] : undefined,
+        policyPath: policyResolution.policyPath,
+        policy: policyResolution.policy
     });
 
     logger.info("Ingestion finished", {
