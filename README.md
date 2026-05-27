@@ -11,6 +11,18 @@
 
 <br />
 
+<div align="center">
+  <p>
+    <strong>Live CLI site:</strong>
+    <a href="https://cortexacli.netlify.app/" target="_blank" rel="noopener noreferrer">https://cortexacli.netlify.app/</a>
+  </p>
+  <p>
+    <a href="https://cortexacli.netlify.app/" target="_blank" rel="noopener noreferrer">
+      <img alt="CORTEXA CLI Site" src="https://img.shields.io/badge/Visit%20the%20CLI%20Site-Open%20Demo-brightgreen?style=for-the-badge" />
+    </a>
+  </p>
+</div>
+
 CORTEXA is a local-first memory runtime for software development workflows. It ingests code and chat history, stores optimized memory units, retrieves relevant context with hybrid ranking, and compiles prompt-ready context for coding agents and tools.
 
 **CX-LINK** is CORTEXA’s context exchange protocol: a stable contract for turning retrieval results + constraints into agent-ready envelopes (`/cxlink/context`, `/cxlink/query`, `/cxlink/plan`).
