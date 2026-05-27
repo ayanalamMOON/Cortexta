@@ -381,6 +381,24 @@
             border-right: 1px solid rgba(62, 207, 178, 0.08);
         }
 
+        .release-timeline-link {
+            display: block;
+            color: inherit;
+            text-decoration: none;
+            transition: background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .release-timeline-link:hover {
+            background: rgba(62, 207, 178, 0.05);
+            transform: translateY(-2px);
+            box-shadow: inset 0 0 0 1px rgba(62, 207, 178, 0.16);
+        }
+
+        .release-timeline-link:focus-visible {
+            outline: 2px solid rgba(62, 207, 178, 0.5);
+            outline-offset: -2px;
+        }
+
         .release-timeline-item:last-child {
             border-right: none;
         }
@@ -2676,26 +2694,28 @@
                 <span>recent work surfaced in the v0.1.3 update</span>
             </div>
             <div class="release-timeline-track">
-                <div class="release-timeline-item">
+                <a class="release-timeline-item release-timeline-link" href="#release-llm-status">
                     <h3>LLM runtime status</h3>
                     <p>Diagnostic payloads, runtime health hints, and a CLI status surface for faster triage.</p>
                     <div class="release-timeline-meta">commit cf76d19 · status</div>
-                </div>
-                <div class="release-timeline-item">
+                </a>
+                <a class="release-timeline-item release-timeline-link" href="#release-ingestion-policy">
                     <h3>Ingestion policy</h3>
                     <p>Deterministic include/exclude and redaction rules, applied before memories are stored.</p>
                     <div class="release-timeline-meta">policy + validation</div>
-                </div>
-                <div class="release-timeline-item">
+                </a>
+                <a class="release-timeline-item release-timeline-link" href="#release-context-stream-fix">
                     <h3>Context stream fix</h3>
-                    <p>Live suggestions stay active when compiled context exists, even if no stored memories were used.</p>
+                    <p>Live suggestions stay active when compiled context exists, even if no stored memories were used.
+                    </p>
                     <div class="release-timeline-meta">contextDeltaSuggested</div>
-                </div>
-                <div class="release-timeline-item">
+                </a>
+                <a class="release-timeline-item release-timeline-link" href="#release-mini-llm">
                     <h3>Mini LLM</h3>
-                    <p>Quantized local model training, preview, and schema-aware completions for lightweight workflows.</p>
+                    <p>Quantized local model training, preview, and schema-aware completions for lightweight workflows.
+                    </p>
                     <div class="release-timeline-meta">train · preview · status</div>
-                </div>
+                </a>
             </div>
         </div>
     </div>
