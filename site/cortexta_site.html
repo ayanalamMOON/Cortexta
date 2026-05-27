@@ -322,10 +322,14 @@
         }
 
         .hero-update-chip:hover {
-            color: var(--cyan);
-            border-color: rgba(62, 207, 178, 0.3);
-            background: rgba(62, 207, 178, 0.09);
-            transform: translateY(-1px);
+            background: rgba(62, 207, 178, 0.05);
+            transform: translateY(-2px);
+            box-shadow: inset 0 0 0 1px rgba(62, 207, 178, 0.16);
+        }
+
+        .hero-update-chip:focus-visible {
+            outline: 2px solid rgba(62, 207, 178, 0.5);
+            outline-offset: -2px;
         }
 
         .hero-update-chip strong {
