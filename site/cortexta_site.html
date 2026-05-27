@@ -666,6 +666,10 @@
             padding: 8rem 2rem;
         }
 
+        .updates-section {
+            padding: 8rem 2rem;
+        }
+
         .idea-grid {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
@@ -766,6 +770,69 @@
             color: var(--text-2);
             font-size: 0.9rem;
             line-height: 1.7;
+        }
+
+        .release-links {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-top: 1rem;
+            margin-bottom: 0.9rem;
+        }
+
+        .release-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            font-family: var(--font-mono);
+            font-size: 0.72rem;
+            color: var(--text-1);
+            text-decoration: none;
+            padding: 0.3rem 0.55rem;
+            border-radius: 999px;
+            border: 1px solid rgba(62, 207, 178, 0.16);
+            background: rgba(62, 207, 178, 0.05);
+            transition: all 0.2s ease;
+        }
+
+        .release-link:hover {
+            color: var(--cyan);
+            border-color: rgba(62, 207, 178, 0.3);
+            background: rgba(62, 207, 178, 0.09);
+        }
+
+        .release-link small {
+            color: var(--text-3);
+        }
+
+        .release-test-title {
+            margin-top: 0.8rem;
+            margin-bottom: 0.35rem;
+            font-family: var(--font-mono);
+            font-size: 0.68rem;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: var(--text-3);
+        }
+
+        .release-test {
+            margin: 0;
+            padding: 0.8rem 0.9rem;
+            border-radius: 10px;
+            border: 1px solid rgba(62, 207, 178, 0.14);
+            background: rgba(6, 13, 24, 0.72);
+            color: var(--text-1);
+            overflow-x: auto;
+            font-family: var(--font-mono);
+            font-size: 0.72rem;
+            line-height: 1.65;
+        }
+
+        .release-test code {
+            background: transparent;
+            color: inherit;
+            padding: 0;
+            border-radius: 0;
         }
 
         /* ─── ARCHITECTURE ─────────────────────────────────────────── */
@@ -2567,38 +2634,83 @@
             <div class="section-header">
                 <div class="section-label">Release</div>
                 <h2>What's new — v0.1.3 highlights</h2>
-                <p>Recent operator-facing additions, stability fixes, and UX polish. Full details are available in the <a href="/CHANGELOG.md" class="grad">CHANGELOG</a> and on the <a href="https://github.com/ayanalamMOON/Cortexta/releases/tag/v0.1.3" class="grad" target="_blank" rel="noopener noreferrer">GitHub release page</a>.</p>
+                <p>Recent operator-facing additions, stability fixes, and UX polish. Full details are available in the
+                    <a href="/CHANGELOG.md" class="grad">CHANGELOG</a>, on the <a
+                        href="https://github.com/ayanalamMOON/Cortexta/releases/tag/v0.1.3" class="grad" target="_blank"
+                        rel="noopener noreferrer">GitHub release page</a>, and in the commit trail below.</p>
             </div>
 
             <div class="idea-grid" style="margin-bottom:2.5rem;">
                 <div class="idea-card">
                     <div class="idea-icon tag-cyan">🆕</div>
                     <h3>LLM runtime status & diagnostics</h3>
-                    <p>Added runtime LLM diagnostics surfaced via <code>POST /cxlink/llm/status</code> and the CLI <code>cortexa llm status --runtime</code>. Operators can now see effective mode, timeout, reachable state, last success/error and diagnostic hints for faster root cause analysis.</p>
+                    <p>Added runtime LLM diagnostics surfaced via <code>POST /cxlink/llm/status</code> and the CLI
+                        <code>cortexa llm status --runtime</code>. Operators can now see effective mode, timeout,
+                        reachable state, last success/error and diagnostic hints for faster root cause analysis.</p>
+                    <div class="release-links">
+                        <a class="release-link" href="https://github.com/ayanalamMOON/Cortexta/commit/cf76d19" target="_blank" rel="noopener noreferrer">commit <small>cf76d19</small></a>
+                        <a class="release-link" href="https://github.com/ayanalamMOON/Cortexta/commit/6bae5dc" target="_blank" rel="noopener noreferrer">release prep <small>6bae5dc</small></a>
+                    </div>
+                    <div class="release-test-title">How to test</div>
+                    <pre class="release-test"><code>pnpm run cortexa -- llm status --runtime
+curl -s -X POST http://localhost:4312/cxlink/llm/status \
+  -H "content-type: application/json" \
+  -d '{"projectId":"my-project"}'</code></pre>
                 </div>
 
                 <div class="idea-card">
                     <div class="idea-icon tag-purple">⚙️</div>
                     <h3>Deterministic ingestion policy</h3>
-                    <p>Project-level ingestion via <code>cortexa.policy.json</code> is supported: include/exclude globs, language filters, redaction rules and size limits. The ingestion pipeline applies policy-driven filtering and redaction before persisting memories.</p>
+                    <p>Project-level ingestion via <code>cortexa.policy.json</code> is supported: include/exclude globs,
+                        language filters, redaction rules and size limits. The ingestion pipeline applies policy-driven
+                        filtering and redaction before persisting memories.</p>
+                    <div class="release-links">
+                        <a class="release-link" href="https://github.com/ayanalamMOON/Cortexta/commit/cf76d19" target="_blank" rel="noopener noreferrer">commit <small>cf76d19</small></a>
+                        <a class="release-link" href="https://github.com/ayanalamMOON/Cortexta/commit/a924f32" target="_blank" rel="noopener noreferrer">site/docs <small>a924f32</small></a>
+                    </div>
+                    <div class="release-test-title">How to test</div>
+                    <pre class="release-test"><code>pnpm run cortexa -- ingest . --policy-check
+pnpm run cortexa -- ingest . --policy=.\cortexa.policy.json --max-files=25</code></pre>
                 </div>
 
                 <div class="idea-card">
                     <div class="idea-icon tag-amber">🔁</div>
                     <h3>Context stream stability fix</h3>
-                    <p>Improved live context streaming: suggestions are no longer suppressed when compiled context text exists but stored memory counts are zero (useful during inline/ephemeral compilations). This resolves a test-time suppression that prevented valid <code>contextDeltaSuggested</code> events.</p>
+                    <p>Improved live context streaming: suggestions are no longer suppressed when compiled context text
+                        exists but stored memory counts are zero (useful during inline/ephemeral compilations). This
+                        resolves a test-time suppression that prevented valid <code>contextDeltaSuggested</code> events.
+                    </p>
+                    <div class="release-links">
+                        <a class="release-link" href="https://github.com/ayanalamMOON/Cortexta/commit/64ec35e" target="_blank" rel="noopener noreferrer">commit <small>64ec35e</small></a>
+                        <a class="release-link" href="https://github.com/ayanalamMOON/Cortexta/commit/720546d" target="_blank" rel="noopener noreferrer">site update <small>720546d</small></a>
+                    </div>
+                    <div class="release-test-title">How to test</div>
+                    <pre class="release-test"><code>pnpm run test:context-stream
+# optional live check
+pnpm run cortexa -- daemon start</code></pre>
                 </div>
 
                 <div class="idea-card">
                     <div class="idea-icon tag-green">🧠</div>
                     <h3>Mini LLM & CLI improvements</h3>
-                    <p>Quantized local mini-LLM support for compact n-gram inference and JSON schema completions. CLI surface expanded with <code>llm train</code>, <code>llm preview</code>, and improved <code>llm status</code> outputs.</p>
+                    <p>Quantized local mini-LLM support for compact n-gram inference and JSON schema completions. CLI
+                        surface expanded with <code>llm train</code>, <code>llm preview</code>, and improved
+                        <code>llm status</code> outputs.</p>
+                    <div class="release-links">
+                        <a class="release-link" href="https://github.com/ayanalamMOON/Cortexta/commit/cf76d19" target="_blank" rel="noopener noreferrer">commit <small>cf76d19</small></a>
+                        <a class="release-link" href="https://github.com/ayanalamMOON/Cortexta/commit/b3658a7" target="_blank" rel="noopener noreferrer">skills + coordination <small>b3658a7</small></a>
+                    </div>
+                    <div class="release-test-title">How to test</div>
+                    <pre class="release-test"><code>pnpm run cortexa -- llm train . --project-id=my-project --max-vocab=4096
+pnpm run cortexa -- llm preview "summarize the release" --max-tokens=96</code></pre>
                 </div>
             </div>
 
             <div style="display:flex;gap:1rem;align-items:flex-start;flex-wrap:wrap;">
-                <a class="btn btn-primary" href="https://cortexacli.netlify.app/" target="_blank" rel="noopener noreferrer">Open Live CLI Site</a>
-                <a class="btn btn-ghost" href="https://github.com/ayanalamMOON/Cortexta/releases/tag/v0.1.3" target="_blank" rel="noopener noreferrer">View v0.1.3 on GitHub</a>
+                <a class="btn btn-primary" href="https://cortexacli.netlify.app/" target="_blank"
+                    rel="noopener noreferrer">Open Live CLI Site</a>
+                <a class="btn btn-ghost" href="https://github.com/ayanalamMOON/Cortexta/releases/tag/v0.1.3"
+                    target="_blank" rel="noopener noreferrer">View v0.1.3 on GitHub</a>
             </div>
         </div>
     </section>
