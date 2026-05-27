@@ -297,6 +297,42 @@
             margin-bottom: 1.5rem;
         }
 
+        .hero-updates {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.55rem;
+            margin: 0 0 1.2rem;
+            max-width: 620px;
+        }
+
+        .hero-update-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            padding: 0.32rem 0.7rem;
+            border-radius: 999px;
+            border: 1px solid rgba(62, 207, 178, 0.16);
+            background: rgba(62, 207, 178, 0.05);
+            color: var(--text-1);
+            font-family: var(--font-mono);
+            font-size: 0.68rem;
+            letter-spacing: 0.06em;
+            text-decoration: none;
+            transition: all 0.2s ease;
+        }
+
+        .hero-update-chip:hover {
+            color: var(--cyan);
+            border-color: rgba(62, 207, 178, 0.3);
+            background: rgba(62, 207, 178, 0.09);
+            transform: translateY(-1px);
+        }
+
+        .hero-update-chip strong {
+            color: var(--cyan);
+            font-weight: 700;
+        }
+
         .hero-badge::before {
             content: '';
             width: 6px;
@@ -833,6 +869,18 @@
             color: inherit;
             padding: 0;
             border-radius: 0;
+        }
+
+        .release-expected {
+            margin-top: 0.55rem;
+            color: var(--text-3);
+            font-size: 0.75rem;
+            line-height: 1.6;
+        }
+
+        .release-expected strong {
+            color: var(--green);
+            font-weight: 600;
         }
 
         /* ─── ARCHITECTURE ─────────────────────────────────────────── */
@@ -2414,6 +2462,14 @@
         <div class="hero-inner">
             <div class="hero-text">
                 <div class="hero-badge">Local-First Cognitive Runtime</div>
+                <div class="hero-updates" aria-label="Recent changes summary">
+                    <a class="hero-update-chip" href="#updates"><strong>v0.1.3</strong> release highlights</a>
+                    <a class="hero-update-chip" href="#updates">LLM runtime status</a>
+                    <a class="hero-update-chip" href="#updates">ingestion policy</a>
+                    <a class="hero-update-chip" href="#updates">context stream fix</a>
+                    <a class="hero-update-chip" href="#updates">mini LLM</a>
+                    <a class="hero-update-chip" href="https://cortexacli.netlify.app/" target="_blank" rel="noopener noreferrer">live site</a>
+                </div>
                 <h1>
                     Don't memorize tokens.<br>
                     <span class="grad">Preserve semantics.</span>
@@ -2637,7 +2693,8 @@
                 <p>Recent operator-facing additions, stability fixes, and UX polish. Full details are available in the
                     <a href="/CHANGELOG.md" class="grad">CHANGELOG</a>, on the <a
                         href="https://github.com/ayanalamMOON/Cortexta/releases/tag/v0.1.3" class="grad" target="_blank"
-                        rel="noopener noreferrer">GitHub release page</a>, and in the commit trail below.</p>
+                        rel="noopener noreferrer">GitHub release page</a>, and in the commit trail below.
+                </p>
             </div>
 
             <div class="idea-grid" style="margin-bottom:2.5rem;">
@@ -2646,16 +2703,20 @@
                     <h3>LLM runtime status & diagnostics</h3>
                     <p>Added runtime LLM diagnostics surfaced via <code>POST /cxlink/llm/status</code> and the CLI
                         <code>cortexa llm status --runtime</code>. Operators can now see effective mode, timeout,
-                        reachable state, last success/error and diagnostic hints for faster root cause analysis.</p>
+                        reachable state, last success/error and diagnostic hints for faster root cause analysis.
+                    </p>
                     <div class="release-links">
-                        <a class="release-link" href="https://github.com/ayanalamMOON/Cortexta/commit/cf76d19" target="_blank" rel="noopener noreferrer">commit <small>cf76d19</small></a>
-                        <a class="release-link" href="https://github.com/ayanalamMOON/Cortexta/commit/6bae5dc" target="_blank" rel="noopener noreferrer">release prep <small>6bae5dc</small></a>
+                        <a class="release-link" href="https://github.com/ayanalamMOON/Cortexta/commit/cf76d19"
+                            target="_blank" rel="noopener noreferrer">commit <small>cf76d19</small></a>
+                        <a class="release-link" href="https://github.com/ayanalamMOON/Cortexta/compare/v0.1.2...v0.1.3"
+                            target="_blank" rel="noopener noreferrer">PR/compare <small>v0.1.2 → v0.1.3</small></a>
                     </div>
                     <div class="release-test-title">How to test</div>
                     <pre class="release-test"><code>pnpm run cortexa -- llm status --runtime
 curl -s -X POST http://localhost:4312/cxlink/llm/status \
   -H "content-type: application/json" \
   -d '{"projectId":"my-project"}'</code></pre>
+                    <div class="release-expected"><strong>Expected:</strong> the runtime response includes effective mode, timeout, reachability, last success/error, and diagnostic hints.</div>
                 </div>
 
                 <div class="idea-card">
@@ -2665,12 +2726,15 @@ curl -s -X POST http://localhost:4312/cxlink/llm/status \
                         language filters, redaction rules and size limits. The ingestion pipeline applies policy-driven
                         filtering and redaction before persisting memories.</p>
                     <div class="release-links">
-                        <a class="release-link" href="https://github.com/ayanalamMOON/Cortexta/commit/cf76d19" target="_blank" rel="noopener noreferrer">commit <small>cf76d19</small></a>
-                        <a class="release-link" href="https://github.com/ayanalamMOON/Cortexta/commit/a924f32" target="_blank" rel="noopener noreferrer">site/docs <small>a924f32</small></a>
+                        <a class="release-link" href="https://github.com/ayanalamMOON/Cortexta/commit/cf76d19"
+                            target="_blank" rel="noopener noreferrer">commit <small>cf76d19</small></a>
+                        <a class="release-link" href="https://github.com/ayanalamMOON/Cortexta/compare/a924f32...f3af3da"
+                            target="_blank" rel="noopener noreferrer">PR/compare <small>policy + site</small></a>
                     </div>
                     <div class="release-test-title">How to test</div>
                     <pre class="release-test"><code>pnpm run cortexa -- ingest . --policy-check
 pnpm run cortexa -- ingest . --policy=.\cortexa.policy.json --max-files=25</code></pre>
+                    <div class="release-expected"><strong>Expected:</strong> validation passes, ingestion respects include/exclude rules, and the summary shows the filtered scope/redactions applied.</div>
                 </div>
 
                 <div class="idea-card">
@@ -2681,13 +2745,16 @@ pnpm run cortexa -- ingest . --policy=.\cortexa.policy.json --max-files=25</code
                         resolves a test-time suppression that prevented valid <code>contextDeltaSuggested</code> events.
                     </p>
                     <div class="release-links">
-                        <a class="release-link" href="https://github.com/ayanalamMOON/Cortexta/commit/64ec35e" target="_blank" rel="noopener noreferrer">commit <small>64ec35e</small></a>
-                        <a class="release-link" href="https://github.com/ayanalamMOON/Cortexta/commit/720546d" target="_blank" rel="noopener noreferrer">site update <small>720546d</small></a>
+                        <a class="release-link" href="https://github.com/ayanalamMOON/Cortexta/commit/64ec35e"
+                            target="_blank" rel="noopener noreferrer">commit <small>64ec35e</small></a>
+                        <a class="release-link" href="https://github.com/ayanalamMOON/Cortexta/compare/64ec35e...f3af3da"
+                            target="_blank" rel="noopener noreferrer">PR/compare <small>stream fix</small></a>
                     </div>
                     <div class="release-test-title">How to test</div>
                     <pre class="release-test"><code>pnpm run test:context-stream
 # optional live check
 pnpm run cortexa -- daemon start</code></pre>
+                    <div class="release-expected"><strong>Expected:</strong> the integration test passes and the live stream emits <code>contextDeltaSuggested</code> when compiled context exists.</div>
                 </div>
 
                 <div class="idea-card">
@@ -2695,14 +2762,18 @@ pnpm run cortexa -- daemon start</code></pre>
                     <h3>Mini LLM & CLI improvements</h3>
                     <p>Quantized local mini-LLM support for compact n-gram inference and JSON schema completions. CLI
                         surface expanded with <code>llm train</code>, <code>llm preview</code>, and improved
-                        <code>llm status</code> outputs.</p>
+                        <code>llm status</code> outputs.
+                    </p>
                     <div class="release-links">
-                        <a class="release-link" href="https://github.com/ayanalamMOON/Cortexta/commit/cf76d19" target="_blank" rel="noopener noreferrer">commit <small>cf76d19</small></a>
-                        <a class="release-link" href="https://github.com/ayanalamMOON/Cortexta/commit/b3658a7" target="_blank" rel="noopener noreferrer">skills + coordination <small>b3658a7</small></a>
+                        <a class="release-link" href="https://github.com/ayanalamMOON/Cortexta/commit/cf76d19"
+                            target="_blank" rel="noopener noreferrer">commit <small>cf76d19</small></a>
+                        <a class="release-link" href="https://github.com/ayanalamMOON/Cortexta/compare/12f6c9b...cf76d19"
+                            target="_blank" rel="noopener noreferrer">PR/compare <small>LLM path</small></a>
                     </div>
                     <div class="release-test-title">How to test</div>
                     <pre class="release-test"><code>pnpm run cortexa -- llm train . --project-id=my-project --max-vocab=4096
 pnpm run cortexa -- llm preview "summarize the release" --max-tokens=96</code></pre>
+                    <div class="release-expected"><strong>Expected:</strong> training produces a model artifact, preview returns schema-aware text, and status reports the mini LLM runtime details.</div>
                 </div>
             </div>
 
