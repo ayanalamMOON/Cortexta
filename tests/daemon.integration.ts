@@ -209,6 +209,95 @@ async function runContract(name: string, factory: DaemonFactory): Promise<void> 
                 `[${name}] /health sessionResurrection.slo.windows`
             );
 
+            const ready = await fetch(`${baseUrl}/ready`);
+            await expectStatus(ready, 200, `[${name}] /ready`);
+            const readyBody = (await ready.json()) as {
+                ok?: boolean;
+                ready?: boolean;
+                service?: string;
+                version?: string;
+                subsystems?: {
+                    selfHealing?: { running?: boolean };
+                    sessionResurrection?: { running?: boolean };
+                    contextStream?: { enabled?: boolean };
+                };
+            };
+            assert.equal(readyBody.ok, true, `[${name}] /ready ok`);
+            assert.equal(readyBody.ready, true, `[${name}] /ready ready`);
+            assert.equal(readyBody.service, "cortexa-daemon", `[${name}] /ready service`);
+            assert.equal(typeof readyBody.version, "string", `[${name}] /ready version`);
+            assert.equal(typeof readyBody.subsystems?.selfHealing?.running, "boolean", `[${name}] /ready selfHealing.running`);
+            assert.equal(
+                typeof readyBody.subsystems?.sessionResurrection?.running,
+                "boolean",
+                `[${name}] /ready sessionResurrection.running`
+            );
+            assert.equal(
+                typeof readyBody.subsystems?.contextStream?.enabled,
+                "boolean",
+                `[${name}] /ready contextStream.enabled`
+            );
+
+            const info = await fetch(`${baseUrl}/info`);
+            await expectStatus(info, 200, `[${name}] /info`);
+            const infoBody = (await info.json()) as {
+                ok?: boolean;
+                info?: { service?: string; packageName?: string; version?: string; nodeVersion?: string };
+                metrics?: { enabled?: boolean; path?: string; requireAuth?: boolean };
+            };
+            assert.equal(infoBody.ok, true, `[${name}] /info ok`);
+            assert.equal(infoBody.info?.service, "cortexa-daemon", `[${name}] /info service`);
+            assert.equal(typeof infoBody.info?.packageName, "string", `[${name}] /info packageName`);
+            assert.equal(typeof infoBody.info?.version, "string", `[${name}] /info version`);
+            assert.equal(typeof infoBody.info?.nodeVersion, "string", `[${name}] /info nodeVersion`);
+            assert.equal(typeof infoBody.metrics?.enabled, "boolean", `[${name}] /info metrics.enabled`);
+            assert.equal(typeof infoBody.metrics?.path, "string", `[${name}] /info metrics.path`);
+            assert.equal(typeof infoBody.metrics?.requireAuth, "boolean", `[${name}] /info metrics.requireAuth`);
+
+            const version = await fetch(`${baseUrl}/version`);
+            await expectStatus(version, 200, `[${name}] /version`);
+            const versionBody = (await version.json()) as {
+                ok?: boolean;
+                service?: string;
+                packageName?: string;
+                version?: string;
+                nodeVersion?: string;
+            };
+            assert.equal(versionBody.ok, true, `[${name}] /version ok`);
+            assert.equal(versionBody.service, "cortexa-daemon", `[${name}] /version service`);
+            assert.equal(typeof versionBody.packageName, "string", `[${name}] /version packageName`);
+            assert.equal(typeof versionBody.version, "string", `[${name}] /version version`);
+            assert.equal(typeof versionBody.nodeVersion, "string", `[${name}] /version nodeVersion`);
+            const routes = await fetch(`${baseUrl}/routes`);
+            await expectStatus(routes, 200, `[${name}] /routes`);
+            const routesBody = (await routes.json()) as {
+                ok?: boolean;
+                routes?: Array<{ method?: string; path?: string; public?: boolean }>;
+            };
+            assert.equal(routesBody.ok, true, `[${name}] /routes ok`);
+            assert.ok(Array.isArray(routesBody.routes), `[${name}] /routes routes array`);
+            assert.ok((routesBody.routes?.length ?? 0) >= 10, `[${name}] /routes route count`);
+            assert.ok(
+                (routesBody.routes ?? []).some((route) => route.path === "/ready" && route.public === true),
+                `[${name}] /routes includes /ready`
+            );
+            assert.ok(
+                (routesBody.routes ?? []).some((route) => route.path === "/ingest" && route.public === false),
+                `[${name}] /routes includes /ingest`
+            );
+
+            const routeDocs = await fetch(`${baseUrl}/routes/docs`);
+            await expectStatus(routeDocs, 200, `[${name}] /routes/docs`);
+            const routeDocsBody = (await routeDocs.json()) as {
+                ok?: boolean;
+                docs?: Array<{ method?: string; path?: string; summary?: string; auth?: string }>;
+            };
+            assert.equal(routeDocsBody.ok, true, `[${name}] /routes/docs ok`);
+            assert.ok(Array.isArray(routeDocsBody.docs), `[${name}] /routes/docs docs array`);
+            assert.ok(
+                (routeDocsBody.docs ?? []).some((route) => route.path === "/version" && route.method === "GET"),
+                `[${name}] /routes/docs includes /version`
+            );
             const unauthorizedQuery = await postJson(baseUrl, "/query", { query: "hello" });
             await expectStatus(unauthorizedQuery, 401, `[${name}] auth gate /query`);
 
@@ -1139,3 +1228,6 @@ main().catch((error) => {
     console.error(error instanceof Error ? error.stack ?? error.message : String(error));
     process.exit(1);
 });
+
+
+

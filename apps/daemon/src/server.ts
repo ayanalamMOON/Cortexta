@@ -2,6 +2,8 @@ import express from "express";
 import rateLimit from "express-rate-limit";
 import { toPort, toTrimmedString } from "../../../core/daemon/http";
 import { getContextStreamController } from "./context-stream/service";
+import { sendBadRequest, sendUnauthorized } from "./http/respond";
+import { daemonErrorMiddleware, daemonNotFoundMiddleware } from "./middleware/error-handlers";
 import { readDaemonObservabilityConfigFromEnv } from "./observability/config";
 import {
     configureDaemonLogger,
@@ -17,12 +19,7 @@ import {
     setSessionResurrectionConsecutiveFailures
 } from "./observability/metrics";
 import { daemonRequestObservabilityMiddleware } from "./observability/middleware";
-import { contextRouter } from "./routes/context";
-import { contextStreamRouter } from "./routes/context-stream";
-import { cxlinkRouter } from "./routes/cxlink";
-import { evolveRouter } from "./routes/evolve";
-import { ingestRouter } from "./routes/ingest";
-import { queryRouter } from "./routes/query";
+import { registerProtectedDaemonRoutes, registerPublicDaemonRoutes } from "./routes";
 import {
     getSelfHealingStatus,
     startSelfHealingScheduler,
@@ -84,9 +81,9 @@ function isAuthorizedRequest(req: any): boolean {
     return token === required;
 }
 
-function jsonSyntaxErrorHandler(error: any, _req: any, res: any, next: (error?: any) => void): void {
+function jsonSyntaxErrorHandler(error: any, req: any, res: any, next: (error?: any) => void): void {
     if (error instanceof SyntaxError && "body" in error) {
-        res.status(400).json({ ok: false, error: "Invalid JSON payload" });
+        sendBadRequest(res, "Invalid JSON payload", { requestId: req?.requestId });
         return;
     }
     next(error);
@@ -94,7 +91,7 @@ function jsonSyntaxErrorHandler(error: any, _req: any, res: any, next: (error?: 
 
 function authMiddleware(req: any, res: any, next: () => void): void {
     if (!isAuthorizedRequest(req)) {
-        res.status(401).json({ ok: false, error: "unauthorized" });
+        sendUnauthorized(res, { requestId: req?.requestId });
         return;
     }
 
@@ -159,7 +156,7 @@ export function createDaemonApp() {
     if (areMetricsEnabled()) {
         app.get(metricsPath(), async (req: any, res: any) => {
             if (metricsRequireAuth() && !isAuthorizedRequest(req)) {
-                res.status(401).json({ ok: false, error: "unauthorized" });
+                sendUnauthorized(res, { requestId: req?.requestId });
                 return;
             }
 
@@ -238,16 +235,13 @@ export function createDaemonApp() {
         });
     });
 
+    registerPublicDaemonRoutes(app);
     app.use(authMiddleware);
+    registerProtectedDaemonRoutes(app);
 
-    app.use("/ingest", ingestRouter);
-    app.use("/query", queryRouter);
-    app.use("/context", contextRouter);
-    app.use("/context/stream", contextStreamRouter);
-    app.use("/cxlink", cxlinkRouter);
-    app.use("/evolve", evolveRouter);
+    app.use(daemonNotFoundMiddleware);
 
-    app.use((error: any, req: any, res: any, _next: (error?: any) => void) => {
+    app.use((error: any, req: any, _res: any, next: (error?: any) => void) => {
         daemonLogger.error(
             {
                 requestId: req?.requestId,
@@ -257,17 +251,10 @@ export function createDaemonApp() {
             },
             "request.unhandled.error"
         );
-
-        if (res.headersSent) {
-            return;
-        }
-
-        res.status(500).json({
-            ok: false,
-            error: "internal_server_error",
-            requestId: req?.requestId
-        });
+        next(error);
     });
+
+    app.use(daemonErrorMiddleware);
 
     return app;
 }
